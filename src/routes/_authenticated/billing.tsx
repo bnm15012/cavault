@@ -1,13 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { AppShell } from "@/components/layout/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, CreditCard } from "lucide-react";
+import { CheckCircle2, CreditCard, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { createRazorpayOrder, verifyRazorpayPayment } from "@/lib/billing.functions";
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => { open: () => void };
+  }
+}
+
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
 
 export const Route = createFileRoute("/_authenticated/billing")({
   head: () => ({ meta: [{ title: "Billing — PracticeVault" }] }),
@@ -33,6 +53,11 @@ function fmtINR(paise: number) {
 
 function BillingPage() {
   const { data: user } = useCurrentUser();
+  const queryClient = useQueryClient();
+  const createOrder = useServerFn(createRazorpayOrder);
+  const verifyPayment = useServerFn(verifyRazorpayPayment);
+  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
+  const [payingPlanId, setPayingPlanId] = useState<string | null>(null);
 
   const { data: plans } = useQuery({
     queryKey: ["plans"],
@@ -59,6 +84,58 @@ function BillingPage() {
   const trialDaysLeft = sub?.current_period_end
     ? Math.max(0, Math.ceil((new Date(sub.current_period_end).getTime() - Date.now()) / 86400000))
     : null;
+
+  async function choosePlan(p: PlanRow) {
+    setPayingPlanId(p.id);
+    try {
+      const result = await createOrder({ data: { planId: p.id, billingPeriod } });
+      if (!result.configured) {
+        toast.info(
+          "Payments aren't live yet — the Razorpay Key ID & Secret still need to be added in Cloud secrets.",
+        );
+        return;
+      }
+      const loaded = await loadRazorpayScript();
+      if (!loaded || !window.Razorpay) {
+        toast.error("Could not load the Razorpay checkout. Check your connection and try again.");
+        return;
+      }
+      const rzp = new window.Razorpay({
+        key: result.keyId,
+        amount: result.amount,
+        currency: result.currency,
+        name: "PracticeVault",
+        description: `${result.planName} plan (${billingPeriod})`,
+        order_id: result.orderId,
+        prefill: { email: user?.email ?? "" },
+        handler: async (response: {
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+        }) => {
+          try {
+            const verified = await verifyPayment({
+              data: {
+                orderId: result.orderId,
+                paymentId: response.razorpay_payment_id,
+                signature: response.razorpay_signature,
+                planId: p.id,
+                billingPeriod,
+              },
+            });
+            toast.success(`Payment successful — ${verified.planName} plan is now active!`);
+            queryClient.invalidateQueries({ queryKey: ["subscription"] });
+          } catch {
+            toast.error("Payment verification failed. Please contact support.");
+          }
+        },
+      });
+      rzp.open();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+    } finally {
+      setPayingPlanId(null);
+    }
+  }
 
   return (
     <AppShell>
@@ -92,7 +169,25 @@ function BillingPage() {
         </CardContent>
       </Card>
 
-      <h2 className="mb-4 font-display text-xl font-semibold">Choose a plan</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-display text-xl font-semibold">Choose a plan</h2>
+        <div className="inline-flex rounded-md border border-border p-0.5">
+          <Button
+            variant={billingPeriod === "monthly" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setBillingPeriod("monthly")}
+          >
+            Monthly
+          </Button>
+          <Button
+            variant={billingPeriod === "yearly" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setBillingPeriod("yearly")}
+          >
+            Yearly
+          </Button>
+        </div>
+      </div>
       <div className="grid gap-4 md:grid-cols-3">
         {(plans ?? []).map((p) => (
           <Card key={p.id} className="flex flex-col">
@@ -100,9 +195,16 @@ function BillingPage() {
               <p className="font-display text-xl font-semibold">{p.name}</p>
               {p.description && <p className="mt-1 text-sm text-muted-foreground">{p.description}</p>}
               <p className="mt-4 font-display text-3xl font-semibold">
-                {fmtINR(p.price_monthly)}<span className="text-sm font-normal text-muted-foreground">/mo</span>
+                {billingPeriod === "monthly" ? fmtINR(p.price_monthly) : fmtINR(p.price_yearly)}
+                <span className="text-sm font-normal text-muted-foreground">
+                  {billingPeriod === "monthly" ? "/mo" : "/yr"}
+                </span>
               </p>
-              <p className="text-xs text-muted-foreground">or {fmtINR(p.price_yearly)}/yr (save ~17%)</p>
+              <p className="text-xs text-muted-foreground">
+                {billingPeriod === "monthly"
+                  ? `or ${fmtINR(p.price_yearly)}/yr (save ~17%)`
+                  : `equivalent to ${fmtINR(Math.round(p.price_yearly / 12))}/mo`}
+              </p>
 
               <ul className="mt-4 flex-1 space-y-2 text-sm">
                 <FeatureLine label={`${p.max_clients} clients`} />
@@ -114,10 +216,10 @@ function BillingPage() {
 
               <Button
                 className="mt-6"
-                onClick={() =>
-                  toast.info("Razorpay checkout will be wired once you add your Razorpay keys. Contact your CA admin to complete setup.")
-                }
+                disabled={payingPlanId !== null}
+                onClick={() => choosePlan(p)}
               >
+                {payingPlanId === p.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Choose {p.name}
               </Button>
             </CardContent>
@@ -126,7 +228,8 @@ function BillingPage() {
       </div>
 
       <p className="mt-6 text-xs text-muted-foreground">
-        Payments are processed securely via Razorpay. Add your Razorpay Key ID & Secret in Cloud secrets to enable checkout.
+        Payments are processed securely via Razorpay. Checkout goes live automatically once the
+        Razorpay Key ID & Secret are added.
       </p>
     </AppShell>
   );
