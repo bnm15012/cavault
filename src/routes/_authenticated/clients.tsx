@@ -227,7 +227,7 @@ function ClientsPage() {
               <TableHead>PAN</TableHead>
               <TableHead>GSTIN</TableHead>
               <TableHead>Mobile</TableHead>
-              <TableHead>Portal</TableHead>
+              <TableHead>Client Portal</TableHead>
               {(hasPerm(user, "clients.edit") || hasPerm(user, "clients.delete")) && (
                 <TableHead className="w-20 text-right">Actions</TableHead>
               )}
@@ -265,7 +265,11 @@ function ClientsPage() {
                     {c.portal_user_id ? (
                       <Badge variant="secondary">Active</Badge>
                     ) : (
-                      <Badge variant="outline">Not set up</Badge>
+                      <Link to="/clients/$clientId" params={{ clientId: String(c.id) }}>
+                        <Badge variant="outline" className="cursor-pointer hover:bg-accent">
+                          Set up login →
+                        </Badge>
+                      </Link>
                     )}
                   </TableCell>
                   {(hasPerm(user, "clients.edit") || hasPerm(user, "clients.delete")) && (
