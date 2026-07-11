@@ -205,18 +205,18 @@ function RequestDetailPage() {
 
   return (
     <AppShell>
-      <Link to={backLink} className="mb-4 inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="mr-1 h-4 w-4" /> Back
-      </Link>
-
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-cyan-600 to-cyan-500 text-white shadow-sm flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-semibold">{req.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {req.clientName} · {req.fyLabel} · {approved}/{data.items.length} approved
+          <h1 className="font-display text-2xl font-semibold">{req.title}</h1>
+          <p className="mt-1 text-cyan-100 text-sm">
+            {req.clientName} · {req.fyLabel}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to={backLink} className="inline-flex items-center text-sm text-cyan-100 hover:text-white">
+            <ArrowLeft className="mr-1 h-4 w-4" /> Back
+          </Link>
           <Badge variant="outline" className={
             req.status === "completed" ? "bg-green-50 text-green-700 border-green-200" :
             req.status === "open"      ? "bg-blue-50 text-blue-700 border-blue-200" :
@@ -224,7 +224,7 @@ function RequestDetailPage() {
             "bg-amber-50 text-amber-700 border-amber-200"
           }>{req.status}</Badge>
           {canReview && req.status === "open" && (
-            <Button size="sm" onClick={markCompleted}><CheckCircle2 className="mr-2 h-4 w-4" /> Mark completed</Button>
+            <Button size="sm" variant="secondary" onClick={markCompleted}><CheckCircle2 className="mr-2 h-4 w-4" /> Mark completed</Button>
           )}
         </div>
       </div>

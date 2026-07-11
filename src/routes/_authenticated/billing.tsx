@@ -118,9 +118,10 @@ function BillingPage() {
 
   return (
     <AppShell>
-      <div className="mb-6">
-        <h1 className="font-display text-3xl font-semibold">Billing</h1>
-        <p className="mt-1 text-muted-foreground">Manage your subscription and plan.</p>
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-green-600 to-green-500 text-white shadow-sm">
+        <h1 className="font-display text-2xl font-semibold">Billing</h1>
+        <p className="mt-1 text-green-100 text-sm">Manage your subscription</p>
       </div>
 
       <Card className="mb-6">

@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
 import {
@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, Plus, Trash2, GripVertical } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, GripVertical, Pencil, Save, X } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/templates_/$templateId")({
   head: () => ({ meta: [{ title: "Template — CADesk" }] }),
@@ -118,30 +118,45 @@ function TemplateEditorPage() {
 
   return (
     <AppShell>
-      <Link to="/templates" className="mb-4 inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="mr-1 h-4 w-4" /> Templates
-      </Link>
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-amber-600 to-amber-500 text-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="font-display text-2xl font-semibold truncate">{tpl.name}</h1>
+            {tpl.description && <p className="mt-1 text-amber-100 text-sm truncate">{tpl.description}</p>}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" asChild>
+              <Link to="/templates">
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+              </Link>
+            </Button>
+            {canManage && (
+              <Button variant="secondary" size="sm" onClick={handleDeleteTemplate} className="text-red-600 hover:text-red-700">
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
 
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-start gap-4">
         <div className="flex-1 space-y-3">
           <Input
             defaultValue={tpl.name}
             onBlur={(e) => e.target.value !== tpl.name && handleUpdateTemplate({ name: e.target.value })}
             disabled={!canManage}
-            className="font-display text-2xl font-semibold"
+            className="font-display text-xl font-semibold bg-white"
+            placeholder="Template name"
           />
           <Input
             defaultValue={tpl.description ?? ""}
             placeholder="Description"
             onBlur={(e) => handleUpdateTemplate({ description: e.target.value || null })}
             disabled={!canManage}
+            className="bg-white"
           />
         </div>
-        {canManage && (
-          <Button variant="outline" onClick={handleDeleteTemplate} className="text-destructive">
-            <Trash2 className="mr-2 h-4 w-4" /> Delete
-          </Button>
-        )}
       </div>
 
       <Card>

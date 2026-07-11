@@ -84,13 +84,13 @@ function TemplatesPage() {
 
   return (
     <AppShell>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">Document Templates</h1>
-          <p className="mt-1 text-muted-foreground">
-            Reusable checklists for common engagements — ITR, GST, audit, and more.
-          </p>
-        </div>
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-amber-600 to-amber-500 text-white shadow-sm">
+        <h1 className="font-display text-2xl font-semibold">Templates</h1>
+        <p className="mt-1 text-amber-100 text-sm">Reusable document request templates</p>
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center justify-end gap-4">
         {canManage && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>

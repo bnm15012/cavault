@@ -31,9 +31,10 @@ function PortalPage() {
 
   return (
     <AppShell>
-      <div className="mb-6">
-        <h1 className="font-display text-3xl font-semibold">My Documents</h1>
-        <p className="mt-1 text-muted-foreground">Upload documents requested by your CA.</p>
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-sky-600 to-sky-500 text-white shadow-sm">
+        <h1 className="font-display text-2xl font-semibold">My Documents</h1>
+        <p className="mt-1 text-sky-100 text-sm">Your document requests</p>
       </div>
 
       {isLoading ? (

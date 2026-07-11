@@ -101,11 +101,13 @@ function TeamPage() {
 
   return (
     <AppShell>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">Team</h1>
-          <p className="mt-1 text-muted-foreground">Managers and staff in your firm</p>
-        </div>
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-rose-600 to-rose-500 text-white shadow-sm">
+        <h1 className="font-display text-2xl font-semibold">Team</h1>
+        <p className="mt-1 text-rose-100 text-sm">Manage your firm members</p>
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center justify-end gap-4">
         {hasPerm(user, "users.add") && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -151,7 +153,7 @@ function TeamPage() {
         )}
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
+      <div className="rounded-lg border border-border bg-white">
         <Table>
           <TableHeader>
             <TableRow>

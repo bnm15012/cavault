@@ -163,10 +163,11 @@ function ClientDetailPage() {
 
   return (
     <AppShell>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-violet-600 to-violet-500 text-white shadow-sm flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-semibold">{client.name}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <h1 className="font-display text-2xl font-semibold">{client.name}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-violet-100">
             {client.pan && <span>PAN: {client.pan}</span>}
             {client.gstin && <span>· GSTIN: {client.gstin}</span>}
             {client.mobile && <span>· {client.mobile}</span>}
@@ -178,21 +179,21 @@ function ClientDetailPage() {
             )}
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="border-border" asChild>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" asChild>
             <Link to="/clients">
               <ArrowLeft className="mr-2 h-4 w-4" /> Back
             </Link>
           </Button>
           {hasPerm(user, "clients.edit") && (
-            <Button variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setEditOpen(true)}>
+            <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Button>
           )}
           {!client.portal_user_id && hasPerm(user, "clients.edit") && (
             <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50">
+                <Button variant="secondary" size="sm">
                   <KeyRound className="mr-2 h-4 w-4" /> Create portal login
                 </Button>
               </DialogTrigger>
@@ -220,7 +221,7 @@ function ClientDetailPage() {
             </Dialog>
           )}
           {hasPerm(user, "clients.delete") && (
-            <Button variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={handleDelete}>
+            <Button variant="secondary" size="sm" onClick={handleDelete}>
               Delete
             </Button>
           )}

@@ -92,13 +92,13 @@ function RolesPage() {
 
   return (
     <AppShell>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">Roles & Permissions</h1>
-          <p className="mt-1 text-muted-foreground">
-            Create custom roles and grant granular permissions. Assign roles from the Team page.
-          </p>
-        </div>
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-sm">
+        <h1 className="font-display text-2xl font-semibold">Roles & Permissions</h1>
+        <p className="mt-1 text-orange-100 text-sm">Control what each role can do</p>
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center justify-end gap-4">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button>

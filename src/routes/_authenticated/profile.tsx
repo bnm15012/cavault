@@ -31,9 +31,10 @@ function ProfilePage() {
     <AppShell>
       <ChangePasswordModal open={changePassOpen} onOpenChange={setChangePassOpen} />
 
-      <div className="mb-6">
-        <h1 className="font-display text-3xl font-semibold">Profile</h1>
-        <p className="mt-1 text-muted-foreground">Your account details</p>
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-sm">
+        <h1 className="font-display text-2xl font-semibold">Profile</h1>
+        <p className="mt-1 text-purple-100 text-sm">Your account details</p>
       </div>
 
       <div className="grid gap-6 max-w-xl">

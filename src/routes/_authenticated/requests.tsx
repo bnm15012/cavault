@@ -93,15 +93,16 @@ function RequestsPage() {
 
   return (
     <AppShell>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-semibold">Document Requests</h1>
-          <p className="mt-1 text-muted-foreground">Track document collection and review across engagements.</p>
+          <h1 className="font-display text-2xl font-semibold">Document Requests</h1>
+          <p className="mt-1 text-teal-100 text-sm">Track and manage document collection</p>
         </div>
         {canCreate && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button><Plus className="mr-2 h-4 w-4" /> New Request</Button>
+              <Button variant="secondary"><Plus className="mr-2 h-4 w-4" /> New Request</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>New Document Request</DialogTitle></DialogHeader>
@@ -155,7 +156,7 @@ function RequestsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="rounded-lg border border-border bg-card">
+        <div className="rounded-lg border border-border bg-white">
           <Table>
             <TableHeader>
               <TableRow>

@@ -158,17 +158,18 @@ function ClientsPage() {
 
   return (
     <AppShell>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      {/* Page header banner */}
+      <div className="rounded-xl px-6 py-5 mb-6 bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-semibold">Clients</h1>
-          <p className="mt-1 text-muted-foreground">
+          <h1 className="font-display text-2xl font-semibold">Clients</h1>
+          <p className="mt-1 text-indigo-100 text-sm">
             {user?.isCaAdmin ? "All clients in your firm" : "Clients assigned to you"}
           </p>
         </div>
         {hasPerm(user, "clients.add") && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button variant="secondary">
                 <Plus className="mr-2 h-4 w-4" /> Add Client
               </Button>
             </DialogTrigger>
@@ -220,7 +221,7 @@ function ClientsPage() {
         />
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
+      <div className="rounded-lg border border-border bg-white">
         <Table>
           <TableHeader>
             <TableRow>
