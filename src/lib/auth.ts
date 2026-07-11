@@ -173,7 +173,7 @@ export const signUp = createServerFn({ method: "POST" })
   }) => d)
   .handler(async ({ data }) => {
     const { getDb } = await import("@/lib/db");
-    const { users, tenants, profiles, user_roles, subscriptions, plans, roles } =
+    const { users, tenants, profiles, user_roles, subscriptions, plans, roles, financial_years } =
       await import("@/lib/db/schema");
 
     const db = getDb();
@@ -230,6 +230,28 @@ export const signUp = createServerFn({ method: "POST" })
     await db.insert(roles).values([
       { name: "Manager", description: "Can manage clients, requests and team assignments", tenant_id: tenantId, created_at: now },
       { name: "Staff", description: "Can view and work on assigned clients and requests", tenant_id: tenantId, created_at: now },
+    ]);
+
+    // Seed financial years — Indian FY: April 1 to March 31
+    // Determine current FY based on signup date (month >= 4 means new FY has started)
+    const signupYear = now.getFullYear();
+    const signupMonth = now.getMonth() + 1; // 1-based
+    // currentFYStart: April 1 of this year if month >= 4, else April 1 of last year
+    const currentFYStartYear = signupMonth >= 4 ? signupYear : signupYear - 1;
+    const prevFYStartYear = currentFYStartYear - 1;
+
+    const buildFY = (startYear: number, isActive: boolean) => ({
+      label: `FY ${String(startYear).slice(2)}-${String(startYear + 1).slice(2)}`,
+      start_date: new Date(`${startYear}-04-01`),
+      end_date: new Date(`${startYear + 1}-03-31`),
+      is_active: isActive,
+      tenant_id: tenantId,
+      created_at: now,
+    });
+
+    await db.insert(financial_years).values([
+      buildFY(prevFYStartYear, false),   // e.g. FY 24-25 — inactive
+      buildFY(currentFYStartYear, true), // e.g. FY 25-26 — active
     ]);
 
     // Get starter plan
