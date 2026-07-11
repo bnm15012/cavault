@@ -7,7 +7,8 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, CreditCard, Loader2, Zap, Star, Building2 } from "lucide-react";
+import { CheckCircle2, CreditCard, Loader2, Zap, Star, Building2, CalendarDays, RefreshCw } from "lucide-react";
+import { format } from "date-fns";
 import { toast } from "sonner";
 import { createRazorpayOrder, verifyRazorpayPayment, getPublicPlans, getCurrentSubscription } from "@/lib/billing.functions";
 
@@ -126,14 +127,15 @@ function BillingPage() {
       {sub && (
         <Card className="mb-8 bg-white">
           <CardContent className="pt-5 pb-5">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            {/* Top row: plan name + status badge */}
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
                   <CreditCard className="h-5 w-5 text-slate-600" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Current plan</p>
-                  <p className="font-semibold">{sub.plan_name ?? "Free trial"}</p>
+                  <p className="font-semibold text-lg">{sub.plan_name ?? "Free trial"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -150,6 +152,41 @@ function BillingPage() {
                 >
                   {sub.status === "trial" ? "Free Trial" : sub.status === "active" ? "Active" : sub.status}
                 </Badge>
+              </div>
+            </div>
+
+            {/* Detail grid: membership type, start, expiry */}
+            <div className="grid gap-3 sm:grid-cols-3 border-t border-border pt-4">
+              <div className="flex items-start gap-2.5">
+                <RefreshCw className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Membership type</p>
+                  <p className="text-sm font-medium capitalize">{sub.billing_period ?? "—"}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <CalendarDays className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Start date</p>
+                  <p className="text-sm font-medium">
+                    {sub.current_period_start
+                      ? format(new Date(sub.current_period_start), "d MMM yyyy")
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <CalendarDays className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    {sub.status === "trial" ? "Trial expires" : "Renews on"}
+                  </p>
+                  <p className="text-sm font-medium">
+                    {sub.current_period_end
+                      ? format(new Date(sub.current_period_end), "d MMM yyyy")
+                      : "—"}
+                  </p>
+                </div>
               </div>
             </div>
           </CardContent>
