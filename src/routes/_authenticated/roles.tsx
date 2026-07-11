@@ -1,10 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { PERMISSION_GROUPS } from "@/lib/permissions";
+import {
+  getRolesAndPermissions,
+  createRole,
+  togglePermission,
+  deleteRole,
+} from "@/lib/roles.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,63 +34,60 @@ export const Route = createFileRoute("/_authenticated/roles")({
 function RolesPage() {
   const { data: user } = useCurrentUser();
   const queryClient = useQueryClient();
+  const fetchRoles = useServerFn(getRolesAndPermissions);
+  const doCreateRole = useServerFn(createRole);
+  const doTogglePermission = useServerFn(togglePermission);
+  const doDeleteRole = useServerFn(deleteRole);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["roles-permissions"],
-    queryFn: async () => {
-      const [roles, perms] = await Promise.all([
-        supabase.from("roles").select("*").order("created_at"),
-        supabase.from("role_permissions").select("*"),
-      ]);
-      return { roles: roles.data ?? [], perms: perms.data ?? [] };
-    },
+    queryFn: () => fetchRoles(),
   });
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!user?.tenantId) return;
     const form = new FormData(e.currentTarget);
     const name = String(form.get("name")).trim();
     if (name.length < 2) return void toast.error("Enter a role name");
     setBusy(true);
-    const { error } = await supabase.from("roles").insert({
-      tenant_id: user.tenantId,
-      name,
-      description: String(form.get("description") ?? "").trim() || null,
-    });
-    setBusy(false);
-    if (error) {
-      toast.error(error.message.includes("duplicate") ? "A role with this name already exists" : error.message);
-      return;
+    try {
+      await doCreateRole({
+        data: {
+          name,
+          description: String(form.get("description") ?? "").trim() || null,
+        },
+      });
+      toast.success("Role created");
+      setOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["roles-permissions"] });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed";
+      toast.error(msg.includes("duplicate") ? "A role with this name already exists" : msg);
+    } finally {
+      setBusy(false);
     }
-    toast.success("Role created");
-    setOpen(false);
-    queryClient.invalidateQueries({ queryKey: ["roles-permissions"] });
   };
 
-  const togglePermission = async (roleId: string, permission: string, has: boolean) => {
-    if (has) {
-      const { error } = await supabase
-        .from("role_permissions")
-        .delete()
-        .eq("role_id", roleId)
-        .eq("permission", permission);
-      if (error) return void toast.error(error.message);
-    } else {
-      const { error } = await supabase.from("role_permissions").insert({ role_id: roleId, permission });
-      if (error) return void toast.error(error.message);
+  const handleTogglePermission = async (roleId: number, permission: string, has: boolean) => {
+    try {
+      await doTogglePermission({ data: { roleId, permission, has } });
+      queryClient.invalidateQueries({ queryKey: ["roles-permissions"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update permission");
     }
-    queryClient.invalidateQueries({ queryKey: ["roles-permissions"] });
   };
 
-  const deleteRole = async (roleId: string, name: string) => {
+  const handleDeleteRole = async (roleId: number, name: string) => {
     if (!confirm(`Delete role "${name}"? Members holding it will lose its permissions.`)) return;
-    const { error } = await supabase.from("roles").delete().eq("id", roleId);
-    if (error) return void toast.error(error.message);
-    toast.success("Role deleted");
-    queryClient.invalidateQueries({ queryKey: ["roles-permissions"] });
+    try {
+      await doDeleteRole({ data: { roleId, roleName: name } });
+      toast.success("Role deleted");
+      queryClient.invalidateQueries({ queryKey: ["roles-permissions"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete role");
+    }
   };
 
   return (
@@ -151,7 +154,7 @@ function RolesPage() {
                       <p className="mt-1 text-sm text-muted-foreground">{role.description}</p>
                     )}
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => deleteRole(role.id, role.name)}>
+                  <Button variant="ghost" size="icon" onClick={() => handleDeleteRole(role.id, role.name)}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </CardHeader>
@@ -168,7 +171,7 @@ function RolesPage() {
                                 <Checkbox
                                   id={`${role.id}-${perm.key}`}
                                   checked={has}
-                                  onCheckedChange={() => togglePermission(role.id, perm.key, has)}
+                                  onCheckedChange={() => handleTogglePermission(role.id, perm.key, has)}
                                 />
                                 <label
                                   htmlFor={`${role.id}-${perm.key}`}

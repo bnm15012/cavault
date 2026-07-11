@@ -8,7 +8,7 @@
  *  2. Invited user (tenant_id present in metadata): create profile, assign role, optionally link client
  */
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/auth-middleware";
 
 const TRIAL_DAYS = 7;
 
@@ -30,7 +30,7 @@ export const getUserRoles = createServerFn({ method: "GET" })
   });
 
 export const bootstrapNewUser = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator(
     (d: {
       userId: string;

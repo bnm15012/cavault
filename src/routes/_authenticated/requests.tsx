@@ -1,10 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
-import { logActivity } from "@/lib/activity";
+import { getRequests, getRequestOpts, createRequest } from "@/lib/requests.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,9 @@ function RequestsPage() {
   const { data: user } = useCurrentUser();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const fetchRequests = useServerFn(getRequests);
+  const fetchOpts = useServerFn(getRequestOpts);
+  const doCreateRequest = useServerFn(createRequest);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [clientId, setClientId] = useState("");
@@ -44,74 +47,42 @@ function RequestsPage() {
 
   const { data: requests, isLoading } = useQuery({
     queryKey: ["requests"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("document_requests")
-        .select("*, clients(name), financial_years(label), request_items(status)")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchRequests(),
   });
 
   const { data: opts } = useQuery({
     queryKey: ["request-opts"],
     enabled: open,
-    queryFn: async () => {
-      const [c, f, t] = await Promise.all([
-        supabase.from("clients").select("id, name").eq("is_active", true).order("name"),
-        supabase.from("financial_years").select("id, label").eq("is_active", true).order("label", { ascending: false }),
-        supabase.from("document_templates").select("id, name, template_items(id, name, category, sort_order, is_required, is_repeatable)"),
-      ]);
-      return { clients: c.data ?? [], years: f.data ?? [], templates: t.data ?? [] };
-    },
+    queryFn: () => fetchOpts(),
   });
 
   const handleCreate = async () => {
-    if (!user?.tenantId) return;
     if (!clientId || !fyId || !title.trim()) return void toast.error("Client, financial year and title are required");
+
+    const selectedTemplate = opts?.templates.find((t) => t.id === Number(templateId));
+    const tplItems = selectedTemplate?.template_items ?? [];
+
     setBusy(true);
-    const { data: req, error } = await supabase
-      .from("document_requests")
-      .insert({
-        tenant_id: user.tenantId,
-        client_id: clientId,
-        financial_year_id: fyId,
-        template_id: templateId || null,
-        title: title.trim(),
-        created_by: user.userId,
-      })
-      .select()
-      .single();
-    if (error || !req) {
+    try {
+      const result = await doCreateRequest({
+        data: {
+          title: title.trim(),
+          clientId: Number(clientId),
+          financialYearId: Number(fyId),
+          templateId: templateId ? Number(templateId) : null,
+          templateItems: tplItems.length > 0 ? tplItems : undefined,
+        },
+      });
       setBusy(false);
-      return void toast.error(error?.message ?? "Failed");
+      setOpen(false);
+      setTitle(""); setClientId(""); setFyId(""); setTemplateId("");
+      toast.success("Request created");
+      qc.invalidateQueries({ queryKey: ["requests"] });
+      navigate({ to: "/requests/$requestId", params: { requestId: String(result.id) } });
+    } catch (err) {
+      setBusy(false);
+      toast.error(err instanceof Error ? err.message : "Failed to create request");
     }
-    if (templateId) {
-      const tpl = (opts?.templates ?? []).find((t) => t.id === templateId);
-      const items = (tpl?.template_items ?? []) as Array<{ name: string; category: string | null; sort_order: number; is_required: boolean; is_repeatable: boolean }>;
-      if (items.length) {
-        await supabase.from("request_items").insert(
-          items.map((it) => ({
-            request_id: req.id,
-            tenant_id: user.tenantId!,
-            name: it.name,
-            category: it.category,
-            sort_order: it.sort_order,
-            is_required: it.is_required,
-            is_repeatable: it.is_repeatable,
-            status: "pending" as const,
-          })),
-        );
-      }
-    }
-    logActivity({ tenantId: user.tenantId, userId: user.userId, action: `Created request "${title.trim()}"`, entityType: "request", entityId: req.id });
-    setBusy(false);
-    setOpen(false);
-    setTitle(""); setClientId(""); setFyId(""); setTemplateId("");
-    toast.success("Request created");
-    qc.invalidateQueries({ queryKey: ["requests"] });
-    navigate({ to: "/requests/$requestId", params: { requestId: req.id } });
   };
 
   const summary = (items: Array<{ status: string }>) => {
@@ -144,7 +115,7 @@ function RequestsPage() {
                   <Select value={clientId} onValueChange={setClientId}>
                     <SelectTrigger><SelectValue placeholder="Select client" /></SelectTrigger>
                     <SelectContent>
-                      {(opts?.clients ?? []).map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
+                      {(opts?.clients ?? []).map((c) => (<SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -153,7 +124,7 @@ function RequestsPage() {
                   <Select value={fyId} onValueChange={setFyId}>
                     <SelectTrigger><SelectValue placeholder="Select FY" /></SelectTrigger>
                     <SelectContent>
-                      {(opts?.years ?? []).map((f) => (<SelectItem key={f.id} value={f.id}>{f.label}</SelectItem>))}
+                      {(opts?.years ?? []).map((f) => (<SelectItem key={f.id} value={String(f.id)}>{f.label}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -162,7 +133,7 @@ function RequestsPage() {
                   <Select value={templateId} onValueChange={setTemplateId}>
                     <SelectTrigger><SelectValue placeholder="Start blank or pick template" /></SelectTrigger>
                     <SelectContent>
-                      {(opts?.templates ?? []).map((t) => (<SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>))}
+                      {(opts?.templates ?? []).map((t) => (<SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -199,13 +170,13 @@ function RequestsPage() {
               {(requests ?? []).map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
-                    <Link to="/requests/$requestId" params={{ requestId: r.id }} className="font-medium text-primary hover:underline">
+                    <Link to="/requests/$requestId" params={{ requestId: String(r.id) }} className="font-medium text-primary hover:underline">
                       {r.title}
                     </Link>
                   </TableCell>
-                  <TableCell>{(r.clients as { name: string } | null)?.name ?? "—"}</TableCell>
-                  <TableCell>{(r.financial_years as { label: string } | null)?.label ?? "—"}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{summary(r.request_items as unknown as { status: string }[])}</TableCell>
+                  <TableCell>{r.clientName ?? "—"}</TableCell>
+                  <TableCell>{r.fyLabel ?? "—"}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{summary(r.request_items)}</TableCell>
                   <TableCell><Badge variant={r.status === "completed" ? "default" : r.status === "archived" ? "outline" : "secondary"}>{r.status}</Badge></TableCell>
                 </TableRow>
               ))}

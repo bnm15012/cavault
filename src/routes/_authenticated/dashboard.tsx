@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { getDashboardStats } from "@/lib/dashboard.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 function DashboardPage() {
   const { data: user } = useCurrentUser();
   const navigate = useNavigate();
+  const fetchStats = useServerFn(getDashboardStats);
 
   useEffect(() => {
     if (user && user.isClient && !user.isFirmMember) {
@@ -27,29 +29,7 @@ function DashboardPage() {
   const { data: stats } = useQuery({
     queryKey: ["dashboard-stats", user?.tenantId],
     enabled: !!user?.tenantId && user.isFirmMember,
-    queryFn: async () => {
-      const [clients, items, staff, subscription, activity] = await Promise.all([
-        supabase.from("clients").select("id", { count: "exact", head: true }),
-        supabase.from("request_items").select("status"),
-        supabase.from("user_roles").select("id", { count: "exact", head: true }).in("role", ["manager", "staff"]),
-        supabase.from("subscriptions").select("*, plans(name)").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-        supabase
-          .from("activity_logs")
-          .select("id, action, created_at")
-          .order("created_at", { ascending: false })
-          .limit(8),
-      ]);
-      const statuses = (items.data ?? []).map((i) => i.status);
-      return {
-        clientCount: clients.count ?? 0,
-        pendingUploads: statuses.filter((s) => s === "pending" || s === "reupload_required").length,
-        pendingReviews: statuses.filter((s) => s === "uploaded" || s === "under_review").length,
-        approved: statuses.filter((s) => s === "approved").length,
-        staffCount: staff.count ?? 0,
-        subscription: subscription.data,
-        activity: activity.data ?? [],
-      };
-    },
+    queryFn: () => fetchStats(),
   });
 
   const sub = stats?.subscription;
@@ -78,7 +58,7 @@ function DashboardPage() {
             <Badge variant={sub.status === "trial" ? "secondary" : "default"}>
               {sub.status === "trial"
                 ? `Free trial — ${trialDaysLeft} days left`
-                : `${(sub.plans as { name: string } | null)?.name ?? "Plan"} · ${sub.status}`}
+                : `${sub.planName ?? "Plan"} · ${sub.status}`}
             </Badge>
           </Link>
         )}

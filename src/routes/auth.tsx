@@ -1,15 +1,13 @@
 /**
- * /auth is kept as a route so Supabase email-confirmation links still work
- * (they redirect back to /auth after the user clicks the confirmation email).
+ * /auth handles post-login redirects and deep-links (e.g. email confirmation).
  *
- * If the user already has a valid session (email confirmed), send them to
- * their dashboard. Otherwise redirect to the homepage with ?auth=1 so the
- * AuthModal opens automatically.
+ * If the user already has a valid session, send them to their dashboard.
+ * Otherwise redirect to the homepage with ?auth=1 so the AuthModal opens.
  */
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { getUserRoles } from "@/lib/auth.functions";
+import { useServerFn } from "@tanstack/react-start";
+import { getSession } from "@/lib/auth";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -23,19 +21,19 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const fetchSession = useServerFn(getSession);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
+    fetchSession().then((session) => {
+      if (session) {
         // Already logged in — redirect to the right dashboard
-        const roles = await getUserRoles({ data: { userId: session.user.id } });
-        navigate({ to: roles.includes("client") ? "/portal" : "/dashboard" });
+        navigate({ to: session.roles.includes("client") ? "/portal" : "/dashboard" });
       } else {
         // Not logged in — go to homepage and auto-open the modal
         navigate({ to: "/", search: { auth: "1" } });
       }
     });
-  }, [navigate]);
+  }, [navigate, fetchSession]);
 
   return null;
 }

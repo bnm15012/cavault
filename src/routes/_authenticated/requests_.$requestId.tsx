@@ -1,12 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
-import { logActivity } from "@/lib/activity";
 import { getUploadUrl, getDownloadUrl, deleteStorageFile } from "@/lib/storage";
+import {
+  getRequestDetail,
+  getComments,
+  addRequestItem,
+  updateItemStatus,
+  removeRequestItem,
+  insertDocumentFile,
+  deleteDocumentFile,
+  markRequestCompleted,
+  addComment,
+} from "@/lib/request-detail.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,101 +32,75 @@ export const Route = createFileRoute("/_authenticated/requests_/$requestId")({
 });
 
 function RequestDetailPage() {
-  const { requestId } = Route.useParams();
+  const { requestId: requestIdParam } = Route.useParams();
+  const requestId = Number(requestIdParam);
   const { data: user } = useCurrentUser();
   const qc = useQueryClient();
   const [newItemName, setNewItemName] = useState("");
-  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [activeItemId, setActiveItemId] = useState<number | null>(null);
 
   const canReview = hasPerm(user, "documents.review");
   const canDelete = hasPerm(user, "documents.delete");
   const canAddItem = hasPerm(user, "documents.request");
   const canUpload = hasPerm(user, "documents.upload") || user?.isClient;
 
+  const fetchRequestDetail = useServerFn(getRequestDetail);
+  const fetchComments = useServerFn(getComments);
+  const doAddItem = useServerFn(addRequestItem);
+  const doUpdateStatus = useServerFn(updateItemStatus);
+  const doRemoveItem = useServerFn(removeRequestItem);
+  const doInsertFile = useServerFn(insertDocumentFile);
+  const doDeleteFile = useServerFn(deleteDocumentFile);
+  const doMarkCompleted = useServerFn(markRequestCompleted);
+  const doAddComment = useServerFn(addComment);
+  const fetchUploadUrl = useServerFn(getUploadUrl);
+  const fetchDownloadUrl = useServerFn(getDownloadUrl);
+  const removeStorageFile = useServerFn(deleteStorageFile);
+
   const { data, isLoading } = useQuery({
     queryKey: ["request", requestId],
-    queryFn: async () => {
-      const [req, items] = await Promise.all([
-        supabase
-          .from("document_requests")
-          .select("*, clients(name, id), financial_years(label)")
-          .eq("id", requestId)
-          .maybeSingle(),
-        supabase
-          .from("request_items")
-          .select("*, document_files(*)")
-          .eq("request_id", requestId)
-          .order("sort_order"),
-      ]);
-      if (req.error) throw req.error;
-      return { request: req.data, items: items.data ?? [] };
-    },
+    queryFn: () => fetchRequestDetail({ data: { requestId } }),
   });
 
   const { data: comments } = useQuery({
     queryKey: ["comments", activeItemId],
     enabled: !!activeItemId,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("document_comments")
-        .select("*")
-        .eq("request_item_id", activeItemId!)
-        .order("created_at", { ascending: true });
-      const rows = data ?? [];
-      const userIds = [...new Set(rows.map((r) => r.user_id))];
-      const nameMap = new Map<string, string>();
-      if (userIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", userIds);
-        (profs ?? []).forEach((p) => nameMap.set(p.id, p.full_name));
-      }
-      return rows.map((r) => ({ ...r, authorName: nameMap.get(r.user_id) ?? "User" }));
-    },
+    queryFn: () => fetchComments({ data: { itemId: activeItemId! } }),
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["request", requestId] });
 
-  const fetchUploadUrl = useServerFn(getUploadUrl);
-  const fetchDownloadUrl = useServerFn(getDownloadUrl);
-  const removeStorageFile = useServerFn(deleteStorageFile);
-
   const addItem = async () => {
-    if (!user?.tenantId || !newItemName.trim()) return;
+    if (!newItemName.trim()) return;
     const nextSort = (data?.items.at(-1)?.sort_order ?? -1) + 1;
-    const { error } = await supabase.from("request_items").insert({
-      request_id: requestId,
-      tenant_id: user.tenantId,
-      name: newItemName.trim(),
-      sort_order: nextSort,
-      is_required: true,
-      is_repeatable: false,
-      status: "pending" as const,
-    });
-    if (error) return void toast.error(error.message);
-    setNewItemName("");
-    invalidate();
+    try {
+      await doAddItem({
+        data: { requestId, name: newItemName.trim(), sortOrder: nextSort },
+      });
+      setNewItemName("");
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add item");
+    }
   };
 
-  const uploadFile = async (item: { id: string; name: string }, file: File) => {
+  const uploadFile = async (item: { id: number; name: string }, file: File) => {
     if (!user?.tenantId) return;
 
-    // Path: {clientName}/{financialYear}/{documentName}/{timestamp}_{filename}
-    // e.g. "Sharma_and_Associates/FY_2024-25/PAN_Card/1720000000000_pan.pdf"
     const slug = (s: string) => s.trim().replace(/[^\w\-]/g, "_").replace(/_+/g, "_");
-    const reqData    = data?.request;
-    const clientName = slug((reqData?.clients as { name: string } | null)?.name ?? `client_${reqData?.client_id ?? requestId}`);
-    const fyLabel    = slug((reqData?.financial_years as { label: string } | null)?.label ?? "unknown_fy");
-    const docName    = slug(item.name);
-    const fileName   = file.name.replace(/[^\w.\-]/g, "_");
+    const reqData = data?.request;
+    const clientName = slug(reqData?.clientName ?? `client_${reqData?.client_id ?? requestId}`);
+    const fyLabel = slug(reqData?.fyLabel ?? "unknown_fy");
+    const docName = slug(item.name);
+    const fileName = file.name.replace(/[^\w.\-]/g, "_");
     const storagePath = `${clientName}/${fyLabel}/${docName}/${Date.now()}_${fileName}`;
 
     toast.loading("Uploading…", { id: "upload" });
     try {
-      // 1. Get presigned upload URL from server (R2)
       const { url } = await fetchUploadUrl({
         data: { storagePath, contentType: file.type || "application/octet-stream", contentLength: file.size },
       });
 
-      // 2. Upload directly from browser to R2
       const uploadRes = await fetch(url, {
         method: "PUT",
         body: file,
@@ -125,21 +108,17 @@ function RequestDetailPage() {
       });
       if (!uploadRes.ok) throw new Error("Upload to storage failed");
 
-      // 3. Save metadata to MySQL via Supabase PostgREST
-      const { error: insErr } = await supabase.from("document_files").insert({
-        request_item_id: item.id,
-        tenant_id: user.tenantId,
-        storage_path: storagePath,
-        file_name: file.name,
-        file_size: file.size,
-        mime_type: file.type || null,
-        uploaded_by: user.userId,
+      await doInsertFile({
+        data: {
+          requestItemId: item.id,
+          storagePath,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type || null,
+          uploadedBy: user.userId,
+        },
       });
-      if (insErr) throw new Error(insErr.message);
 
-      // 4. Update item status
-      await supabase.from("request_items").update({ status: "uploaded" as const }).eq("id", item.id);
-      logActivity({ tenantId: user.tenantId, userId: user.userId, action: `Uploaded ${file.name}`, entityType: "request_item", entityId: item.id });
       toast.success("File uploaded", { id: "upload" });
       invalidate();
     } catch (err: any) {
@@ -159,53 +138,62 @@ function RequestDetailPage() {
     }
   };
 
-  const deleteFile = async (fileId: string, path: string) => {
+  const deleteFile = async (fileId: number, path: string) => {
     if (!confirm("Delete this file?")) return;
     try {
       await removeStorageFile({ data: { storagePath: path } });
-      await supabase.from("document_files").delete().eq("id", fileId);
+      await doDeleteFile({ data: { fileId } });
       invalidate();
     } catch (err: any) {
       toast.error(err.message ?? "Delete failed");
     }
   };
 
-  const updateStatus = async (itemId: string, status: DocStatus) => {
+  const handleUpdateStatus = async (itemId: number, status: DocStatus) => {
     if (!user) return;
-    const patch: { status: DocStatus; reviewed_by?: string; reviewed_at?: string } = { status };
-    if (status === "approved" || status === "rejected" || status === "reupload_required") {
-      patch.reviewed_by = user.userId;
-      patch.reviewed_at = new Date().toISOString();
+    const isReview = status === "approved" || status === "rejected" || status === "reupload_required";
+    try {
+      await doUpdateStatus({
+        data: {
+          itemId,
+          status,
+          reviewedBy: isReview ? user.userId : undefined,
+          reviewedAt: isReview ? new Date().toISOString() : undefined,
+        },
+      });
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update status");
     }
-    const { error } = await supabase.from("request_items").update(patch).eq("id", itemId);
-    if (error) return void toast.error(error.message);
-    logActivity({ tenantId: user.tenantId!, userId: user.userId, action: `Marked item as ${status}`, entityType: "request_item", entityId: itemId });
-    invalidate();
   };
 
-  const removeItem = async (id: string) => {
+  const removeItem = async (id: number) => {
     if (!confirm("Delete this item and all its files?")) return;
-    await supabase.from("request_items").delete().eq("id", id);
-    invalidate();
+    try {
+      await doRemoveItem({ data: { itemId: id } });
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete item");
+    }
   };
 
-  const addComment = async (itemId: string, body: string) => {
-    if (!user?.tenantId || !body.trim()) return;
-    const { error } = await supabase.from("document_comments").insert({
-      request_item_id: itemId,
-      tenant_id: user.tenantId,
-      user_id: user.userId,
-      body: body.trim(),
-    });
-    if (error) return void toast.error(error.message);
-    qc.invalidateQueries({ queryKey: ["comments", itemId] });
+  const handleAddComment = async (itemId: number, body: string) => {
+    if (!body.trim()) return;
+    try {
+      await doAddComment({ data: { requestItemId: itemId, body: body.trim() } });
+      qc.invalidateQueries({ queryKey: ["comments", itemId] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to post comment");
+    }
   };
 
   const markCompleted = async () => {
-    if (!user?.tenantId) return;
-    await supabase.from("document_requests").update({ status: "completed" as const }).eq("id", requestId);
-    logActivity({ tenantId: user.tenantId, userId: user.userId, action: "Marked request completed", entityType: "request", entityId: requestId });
-    invalidate();
+    try {
+      await doMarkCompleted({ data: { requestId } });
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to mark completed");
+    }
   };
 
   if (isLoading) return <AppShell><p className="text-muted-foreground">Loading…</p></AppShell>;
@@ -225,7 +213,7 @@ function RequestDetailPage() {
         <div>
           <h1 className="font-display text-3xl font-semibold">{req.title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {(req.clients as { name: string } | null)?.name} · {(req.financial_years as { label: string } | null)?.label} · {approved}/{data.items.length} approved
+            {req.clientName} · {req.fyLabel} · {approved}/{data.items.length} approved
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -248,11 +236,11 @@ function RequestDetailPage() {
             onDownload={downloadFile}
             onDeleteFile={deleteFile}
             onRemove={() => removeItem(item.id)}
-            onStatus={(s) => updateStatus(item.id, s)}
+            onStatus={(s) => handleUpdateStatus(item.id, s)}
             onOpenComments={() => setActiveItemId(activeItemId === item.id ? null : item.id)}
             active={activeItemId === item.id}
             comments={activeItemId === item.id ? comments ?? [] : []}
-            onAddComment={(b) => addComment(item.id, b)}
+            onAddComment={(b) => handleAddComment(item.id, b)}
           />
         ))}
       </div>
@@ -268,17 +256,17 @@ function RequestDetailPage() {
 }
 
 interface RequestItem {
-  id: string;
+  id: number;
   name: string;
   category: string | null;
   status: DocStatus;
   is_required: boolean;
   is_repeatable: boolean;
-  document_files: Array<{ id: string; storage_path: string; file_name: string; file_size: number; created_at: string }>;
+  document_files: Array<{ id: number; storage_path: string; file_name: string; file_size: number; created_at: string }>;
 }
 
 interface CommentRow {
-  id: string;
+  id: number;
   body: string;
   created_at: string;
   authorName: string;
@@ -293,7 +281,7 @@ function ItemRow({
   canUpload: boolean;
   onUpload: (f: File) => void;
   onDownload: (p: string, n: string) => void;
-  onDeleteFile: (id: string, p: string) => void;
+  onDeleteFile: (id: number, p: string) => void;
   onRemove: () => void;
   onStatus: (s: DocStatus) => void;
   onOpenComments: () => void;

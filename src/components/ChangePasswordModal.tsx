@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { changePassword } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,7 @@ interface ChangePasswordModalProps {
 
 export function ChangePasswordModal({ open, onOpenChange }: ChangePasswordModalProps) {
   const [loading, setLoading] = useState(false);
+  const changePasswordFn = useServerFn(changePassword);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -30,12 +32,16 @@ export function ChangePasswordModal({ open, onOpenChange }: ChangePasswordModalP
     });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setLoading(true);
-    const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
-    setLoading(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success("Password updated successfully.");
-    onOpenChange(false);
-    form.reset();
+    try {
+      await changePasswordFn({ data: { newPassword: parsed.data.password } });
+      toast.success("Password updated successfully.");
+      onOpenChange(false);
+      form.reset();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to update password. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

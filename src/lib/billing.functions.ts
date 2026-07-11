@@ -1,14 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createHmac } from "crypto";
 import { eq, and, desc, asc } from "drizzle-orm";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/auth-middleware";
 import { getDb } from "@/lib/db";
 import { payments, plans, profiles, subscriptions } from "@/lib/db/schema";
 import { hasRole } from "@/lib/db/helpers";
 
 /** Returns the current subscription (with plan name) for the logged-in user's tenant. */
 export const getCurrentSubscription = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .handler(async ({ context }) => {
     const tenantId = await (await import("@/lib/db/helpers")).getUserTenant(context.userId);
     if (!tenantId) return null;
@@ -52,12 +52,7 @@ export const getPublicPlans = createServerFn({ method: "GET" }).handler(async ()
 
 type BillingPeriod = "monthly" | "yearly";
 
-async function getTenantForAdmin(context: {
-  supabase: import("@supabase/supabase-js").SupabaseClient<
-    import("@/integrations/supabase/types").Database
-  >;
-  userId: string;
-}) {
+async function getTenantForAdmin(context: { userId: string }) {
   const isAdmin = await hasRole(context.userId, "ca_admin");
   if (!isAdmin) throw new Error("Only the firm admin can manage billing");
 
@@ -71,7 +66,7 @@ async function getTenantForAdmin(context: {
 }
 
 export const createRazorpayOrder = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d: { planId: string; billingPeriod: BillingPeriod }) => d)
   .handler(async ({ data, context }) => {
     const keyId = process.env.RAZORPAY_KEY_ID;
@@ -136,7 +131,7 @@ export const createRazorpayOrder = createServerFn({ method: "POST" })
   });
 
 export const verifyRazorpayPayment = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator(
     (d: {
       orderId: string;

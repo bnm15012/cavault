@@ -19,7 +19,8 @@ import {
   FileText,
   KeyRound,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
+import { signOut } from "@/lib/auth";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,11 +42,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [changePassOpen, setChangePassOpen] = useState(false);
 
+  const performSignOut = useServerFn(signOut);
+
   const handleSignOut = async () => {
     await queryClient.cancelQueries();
     queryClient.clear();
-    await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
+    await performSignOut();
+    await queryClient.invalidateQueries({ queryKey: ["current-user"] });
+    navigate({ to: "/" });
   };
 
   if (isLoading) {

@@ -1,9 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
+import {
+  getFinancialYears,
+  createFinancialYear,
+  toggleFinancialYearActive,
+} from "@/lib/financial-years.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,51 +42,52 @@ function suggestNextFY(): { label: string; start: string; end: string } {
 function FinancialYearsPage() {
   const { data: user } = useCurrentUser();
   const queryClient = useQueryClient();
+  const fetchYears = useServerFn(getFinancialYears);
+  const doCreate = useServerFn(createFinancialYear);
+  const doToggle = useServerFn(toggleFinancialYearActive);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const suggestion = suggestNextFY();
 
   const { data: years, isLoading } = useQuery({
     queryKey: ["financial-years"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("financial_years")
-        .select("*")
-        .order("label", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchYears(),
   });
 
   const canManage = hasPerm(user, "settings.edit");
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!user?.tenantId) return;
     const form = new FormData(e.currentTarget);
     const label = String(form.get("label")).trim();
     if (!label) return void toast.error("Enter a label");
     setBusy(true);
-    const { error } = await supabase.from("financial_years").insert({
-      tenant_id: user.tenantId,
-      label,
-      start_date: String(form.get("start")) || null,
-      end_date: String(form.get("end")) || null,
-    });
-    setBusy(false);
-    if (error) {
-      toast.error(error.message.includes("duplicate") ? "This financial year already exists" : error.message);
-      return;
+    try {
+      await doCreate({
+        data: {
+          label,
+          startDate: String(form.get("start")) || null,
+          endDate: String(form.get("end")) || null,
+        },
+      });
+      toast.success("Financial year added");
+      setOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["financial-years"] });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed";
+      toast.error(msg.includes("duplicate") ? "This financial year already exists" : msg);
+    } finally {
+      setBusy(false);
     }
-    toast.success("Financial year added");
-    setOpen(false);
-    queryClient.invalidateQueries({ queryKey: ["financial-years"] });
   };
 
-  const toggleActive = async (id: string, isActive: boolean) => {
-    const { error } = await supabase.from("financial_years").update({ is_active: !isActive }).eq("id", id);
-    if (error) return void toast.error(error.message);
-    queryClient.invalidateQueries({ queryKey: ["financial-years"] });
+  const toggleActive = async (id: number, isActive: boolean) => {
+    try {
+      await doToggle({ data: { id, isActive } });
+      queryClient.invalidateQueries({ queryKey: ["financial-years"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update");
+    }
   };
 
   return (

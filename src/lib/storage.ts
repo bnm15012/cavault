@@ -19,7 +19,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuth } from "@/lib/auth-middleware";
 
 function getS3() {
   const accountId = process.env.R2_ACCOUNT_ID;
@@ -45,7 +45,7 @@ function getBucket() {
 
 // ── Get a presigned URL to upload a file directly from the browser ────────────
 export const getUploadUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d: {
     storagePath: string;   // e.g. "42/7/3/1720000000000_pan.pdf"
     contentType: string;   // e.g. "application/pdf"
@@ -74,7 +74,7 @@ export const getUploadUrl = createServerFn({ method: "POST" })
 
 // ── Get a presigned URL to download / view a file ────────────────────────────
 export const getDownloadUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d: { storagePath: string; fileName: string }) => d)
   .handler(async ({ data }) => {
     const s3 = getS3();
@@ -93,7 +93,7 @@ export const getDownloadUrl = createServerFn({ method: "POST" })
 
 // ── Delete a file from R2 ─────────────────────────────────────────────────────
 export const deleteStorageFile = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((d: { storagePath: string }) => d)
   .handler(async ({ data }) => {
     const s3 = getS3();

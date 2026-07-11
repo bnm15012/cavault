@@ -9,6 +9,35 @@ import {
   varchar,
 } from "drizzle-orm/mysql-core";
 
+// ─── Auth Tables ──────────────────────────────────────────────────────────────
+
+export const users = mysqlTable("users", {
+  id:             int("id").primaryKey().autoincrement(),
+  email:          varchar("email", { length: 255 }).notNull().unique(),
+  password_hash:  varchar("password_hash", { length: 255 }).notNull(),
+  full_name:      varchar("full_name", { length: 255 }).notNull().default(""),
+  firm_name:      varchar("firm_name", { length: 255 }),
+  email_confirmed: boolean("email_confirmed").notNull().default(false),
+  created_at:     datetime("created_at").notNull().default(new Date("1970-01-01")),
+  updated_at:     datetime("updated_at").notNull().default(new Date("1970-01-01")),
+});
+
+export const sessions = mysqlTable("sessions", {
+  id:         varchar("id", { length: 64 }).primaryKey(), // random hex token
+  user_id:    int("user_id").notNull().references(() => users.id),
+  expires_at: datetime("expires_at").notNull(),
+  created_at: datetime("created_at").notNull().default(new Date("1970-01-01")),
+});
+
+export const otps = mysqlTable("otps", {
+  id:         int("id").primaryKey().autoincrement(),
+  email:      varchar("email", { length: 255 }).notNull(),
+  code:       varchar("code", { length: 8 }).notNull(),
+  expires_at: datetime("expires_at").notNull(),
+  used:       boolean("used").notNull().default(false),
+  created_at: datetime("created_at").notNull().default(new Date("1970-01-01")),
+});
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 export const appRoleEnum = mysqlEnum("app_role", [
@@ -262,6 +291,9 @@ export const coupons = mysqlTable("coupons", {
 
 // ─── Inferred Types ───────────────────────────────────────────────────────────
 
+export type User = typeof users.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
+export type Otp = typeof otps.$inferSelect;
 export type Tenant = typeof tenants.$inferSelect;
 export type Profile = typeof profiles.$inferSelect;
 export type UserRole = typeof user_roles.$inferSelect;

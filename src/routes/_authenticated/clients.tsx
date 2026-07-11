@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
-import { logActivity } from "@/lib/activity";
+import { getClients, addClient } from "@/lib/clients.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,20 +44,15 @@ const clientSchema = z.object({
 function ClientsPage() {
   const { data: user } = useCurrentUser();
   const queryClient = useQueryClient();
+  const fetchClients = useServerFn(getClients);
+  const createClient = useServerFn(addClient);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const { data: clients, isLoading } = useQuery({
     queryKey: ["clients"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("clients")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchClients(),
   });
 
   const filtered = (clients ?? []).filter((c) => {
@@ -84,33 +79,24 @@ function ClientsPage() {
       return;
     }
     setSaving(true);
-    const { data, error } = await supabase
-      .from("clients")
-      .insert({
-        tenant_id: user.tenantId,
-        name: parsed.data.name,
-        pan: parsed.data.pan ? parsed.data.pan.toUpperCase() : null,
-        gstin: parsed.data.gstin ? parsed.data.gstin.toUpperCase() : null,
-        mobile: parsed.data.mobile || null,
-        email: parsed.data.email || null,
-      })
-      .select()
-      .single();
-    setSaving(false);
-    if (error) {
-      toast.error(error.message.includes("row-level security") ? "You don't have permission to add clients" : error.message);
-      return;
+    try {
+      await createClient({
+        data: {
+          name: parsed.data.name,
+          pan: parsed.data.pan,
+          gstin: parsed.data.gstin,
+          mobile: parsed.data.mobile,
+          email: parsed.data.email,
+        },
+      });
+      toast.success("Client added");
+      setOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add client");
+    } finally {
+      setSaving(false);
     }
-    logActivity({
-      tenantId: user.tenantId,
-      userId: user.userId,
-      action: `Added client ${parsed.data.name}`,
-      entityType: "client",
-      entityId: data.id,
-    });
-    toast.success("Client added");
-    setOpen(false);
-    queryClient.invalidateQueries({ queryKey: ["clients"] });
   };
 
   return (
@@ -207,7 +193,7 @@ function ClientsPage() {
                   <TableCell>
                     <Link
                       to="/clients/$clientId"
-                      params={{ clientId: c.id }}
+                      params={{ clientId: String(c.id) }}
                       className="font-medium text-primary hover:underline"
                     >
                       {c.name}

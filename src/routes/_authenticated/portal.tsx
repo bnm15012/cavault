@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { getPortalRequests } from "@/lib/portal.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/_authenticated/portal")({
 function PortalPage() {
   const { data: user } = useCurrentUser();
   const navigate = useNavigate();
+  const fetchRequests = useServerFn(getPortalRequests);
 
   useEffect(() => {
     if (user && !user.isClient) navigate({ to: "/dashboard", replace: true });
@@ -24,14 +26,7 @@ function PortalPage() {
   const { data: requests, isLoading } = useQuery({
     queryKey: ["portal-requests", user?.clientId],
     enabled: !!user?.clientId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("document_requests")
-        .select("*, financial_years(label), request_items(status)")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchRequests(),
   });
 
   return (
@@ -54,17 +49,17 @@ function PortalPage() {
       ) : (
         <div className="grid gap-3">
           {(requests ?? []).map((r) => {
-            const items = r.request_items as unknown as { status: string }[];
+            const items = r.request_items;
             const pending = items.filter((i) => i.status === "pending" || i.status === "reupload_required").length;
             const total = items.length;
             return (
-              <Link key={r.id} to="/requests/$requestId" params={{ requestId: r.id }}>
+              <Link key={r.id} to="/requests/$requestId" params={{ requestId: String(r.id) }}>
                 <Card className="transition-shadow hover:shadow-md">
                   <CardContent className="flex items-center justify-between pt-6">
                     <div>
                       <p className="font-medium">{r.title}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {(r.financial_years as { label: string } | null)?.label} · {total - pending}/{total} submitted
+                        {r.fyLabel} · {total - pending}/{total} submitted
                       </p>
                     </div>
                     <div className="flex items-center gap-3">

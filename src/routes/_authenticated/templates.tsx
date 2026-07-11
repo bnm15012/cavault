@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
+import { getTemplates, createTemplate } from "@/lib/templates.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,8 @@ const STARTER_TEMPLATES: Array<{ name: string; description: string; items: strin
 function TemplatesPage() {
   const { data: user } = useCurrentUser();
   const qc = useQueryClient();
+  const fetchTemplates = useServerFn(getTemplates);
+  const doCreateTemplate = useServerFn(createTemplate);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -52,44 +55,23 @@ function TemplatesPage() {
 
   const { data: templates, isLoading } = useQuery({
     queryKey: ["templates"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("document_templates")
-        .select("*, template_items(id)")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchTemplates(),
   });
 
-  const createTemplate = async (name: string, description: string, items: string[]) => {
-    if (!user?.tenantId) return;
+  const handleCreateTemplate = async (name: string, description: string, items: string[]) => {
     setBusy(true);
-    const { data: tpl, error } = await supabase
-      .from("document_templates")
-      .insert({ tenant_id: user.tenantId, name, description: description || null })
-      .select()
-      .single();
-    if (error || !tpl) {
+    try {
+      await doCreateTemplate({
+        data: { name, description: description || null, items: items.length > 0 ? items : undefined },
+      });
       setBusy(false);
-      toast.error(error?.message ?? "Failed to create template");
-      return;
+      setOpen(false);
+      toast.success("Template created");
+      qc.invalidateQueries({ queryKey: ["templates"] });
+    } catch (err) {
+      setBusy(false);
+      toast.error(err instanceof Error ? err.message : "Failed to create template");
     }
-    if (items.length) {
-      await supabase.from("template_items").insert(
-        items.map((n, idx) => ({
-          template_id: tpl.id,
-          name: n,
-          sort_order: idx,
-          is_required: true,
-          is_repeatable: false,
-        })),
-      );
-    }
-    setBusy(false);
-    setOpen(false);
-    toast.success("Template created");
-    qc.invalidateQueries({ queryKey: ["templates"] });
   };
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -97,7 +79,7 @@ function TemplatesPage() {
     const form = new FormData(e.currentTarget);
     const name = String(form.get("name") || "").trim();
     if (!name) return void toast.error("Enter a template name");
-    await createTemplate(name, String(form.get("description") || ""), []);
+    await handleCreateTemplate(name, String(form.get("description") || ""), []);
   };
 
   return (
@@ -146,7 +128,7 @@ function TemplatesPage() {
               {STARTER_TEMPLATES.map((s) => (
                 <button
                   key={s.name}
-                  onClick={() => createTemplate(s.name, s.description, s.items)}
+                  onClick={() => handleCreateTemplate(s.name, s.description, s.items)}
                   disabled={busy}
                   className="rounded-lg border border-border p-4 text-left hover:border-primary hover:bg-accent"
                 >
@@ -174,7 +156,7 @@ function TemplatesPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {(templates ?? []).map((t) => (
-            <Link key={t.id} to="/templates/$templateId" params={{ templateId: t.id }}>
+            <Link key={t.id} to="/templates/$templateId" params={{ templateId: String(t.id) }}>
               <Card className="transition-shadow hover:shadow-md">
                 <CardContent className="flex items-center justify-between pt-6">
                   <div>
@@ -183,7 +165,7 @@ function TemplatesPage() {
                       <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{t.description}</p>
                     )}
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {(t.template_items as unknown as { id: string }[]).length} items
+                      {t.template_items.length} items
                     </p>
                   </div>
                   <ChevronRight className="h-5 w-5 text-muted-foreground" />

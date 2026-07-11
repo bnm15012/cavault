@@ -3,9 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
 import { inviteTeamMember, removeTeamMember } from "@/lib/team.functions";
+import { getTeam, toggleCustomRole } from "@/lib/team.data.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,32 +45,15 @@ function TeamPage() {
   const queryClient = useQueryClient();
   const invite = useServerFn(inviteTeamMember);
   const remove = useServerFn(removeTeamMember);
+  const fetchTeam = useServerFn(getTeam);
+  const doToggleCustomRole = useServerFn(toggleCustomRole);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [role, setRole] = useState<"manager" | "staff">("staff");
 
   const { data: team, isLoading } = useQuery({
     queryKey: ["team"],
-    queryFn: async () => {
-      const [rolesRes, customRolesRes, ucrRes] = await Promise.all([
-        supabase.from("user_roles").select("user_id, role").in("role", ["ca_admin", "manager", "staff"]),
-        supabase.from("roles").select("id, name"),
-        supabase.from("user_custom_roles").select("user_id, role_id"),
-      ]);
-      const ids = [...new Set((rolesRes.data ?? []).map((r) => r.user_id))];
-      const { data: profiles } = ids.length
-        ? await supabase.from("profiles").select("id, full_name, email, phone").in("id", ids)
-        : { data: [] };
-      return {
-        members: ids.map((id) => ({
-          userId: id,
-          profile: profiles?.find((p) => p.id === id),
-          baseRoles: (rolesRes.data ?? []).filter((r) => r.user_id === id).map((r) => r.role),
-          customRoleIds: (ucrRes.data ?? []).filter((u) => u.user_id === id).map((u) => u.role_id),
-        })),
-        customRoles: customRolesRes.data ?? [],
-      };
-    },
+    queryFn: () => fetchTeam(),
   });
 
   const handleInvite = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -107,21 +90,13 @@ function TeamPage() {
     }
   };
 
-  const toggleCustomRole = async (memberUserId: string, roleId: string, has: boolean) => {
-    if (has) {
-      const { error } = await supabase
-        .from("user_custom_roles")
-        .delete()
-        .eq("user_id", memberUserId)
-        .eq("role_id", roleId);
-      if (error) return void toast.error(error.message);
-    } else {
-      const { error } = await supabase
-        .from("user_custom_roles")
-        .insert({ user_id: memberUserId, role_id: roleId });
-      if (error) return void toast.error(error.message);
+  const handleToggleCustomRole = async (memberUserId: string, roleId: number, has: boolean) => {
+    try {
+      await doToggleCustomRole({ data: { memberUserId, roleId, has } });
+      queryClient.invalidateQueries({ queryKey: ["team"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update role");
     }
-    queryClient.invalidateQueries({ queryKey: ["team"] });
   };
 
   return (
@@ -224,7 +199,7 @@ function TeamPage() {
                               <button
                                 key={cr.id}
                                 onClick={() =>
-                                  hasPerm(user, "users.edit") && toggleCustomRole(m.userId, cr.id, has)
+                                  hasPerm(user, "users.edit") && handleToggleCustomRole(m.userId, cr.id, has)
                                 }
                                 className="cursor-pointer"
                                 title={has ? "Click to remove role" : "Click to grant role"}

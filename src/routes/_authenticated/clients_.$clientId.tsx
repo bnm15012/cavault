@@ -3,10 +3,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
-import { logActivity } from "@/lib/activity";
 import { createClientLogin } from "@/lib/team.functions";
+import {
+  getClientDetail,
+  toggleAssignment,
+  deleteClient,
+} from "@/lib/client-detail.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,75 +33,40 @@ export const Route = createFileRoute("/_authenticated/clients_/$clientId")({
 });
 
 function ClientDetailPage() {
-  const { clientId } = Route.useParams();
+  const { clientId: clientIdParam } = Route.useParams();
+  const clientId = Number(clientIdParam);
   const { data: user } = useCurrentUser();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const createLogin = useServerFn(createClientLogin);
+  const fetchClientDetail = useServerFn(getClientDetail);
+  const doToggleAssignment = useServerFn(toggleAssignment);
+  const doDeleteClient = useServerFn(deleteClient);
   const [loginOpen, setLoginOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["client", clientId],
-    queryFn: async () => {
-      const [client, assignments, members, requests] = await Promise.all([
-        supabase.from("clients").select("*").eq("id", clientId).maybeSingle(),
-        supabase.from("client_assignments").select("user_id").eq("client_id", clientId),
-        supabase
-          .from("user_roles")
-          .select("user_id, role, profiles:user_id(full_name)")
-          .in("role", ["manager", "staff"]),
-        supabase
-          .from("document_requests")
-          .select("*, financial_years(label)")
-          .eq("client_id", clientId)
-          .order("created_at", { ascending: false }),
-      ]);
-      // profiles join via user_roles doesn't exist as FK; fetch profiles separately
-      const memberIds = (members.data ?? []).map((m) => m.user_id);
-      const { data: profiles } = memberIds.length
-        ? await supabase.from("profiles").select("id, full_name, email").in("id", memberIds)
-        : { data: [] };
-      return {
-        client: client.data,
-        assignedIds: new Set((assignments.data ?? []).map((a) => a.user_id)),
-        members: (members.data ?? []).map((m) => ({
-          userId: m.user_id,
-          role: m.role,
-          name: profiles?.find((p) => p.id === m.user_id)?.full_name ?? "Unknown",
-        })),
-        requests: requests.data ?? [],
-      };
-    },
+    queryFn: () => fetchClientDetail({ data: { clientId } }),
   });
 
   const client = data?.client;
 
-  const toggleAssignment = async (memberId: string, assigned: boolean) => {
-    if (!user?.tenantId || !client) return;
-    if (assigned) {
-      const { error } = await supabase
-        .from("client_assignments")
-        .delete()
-        .eq("client_id", clientId)
-        .eq("user_id", memberId);
-      if (error) return void toast.error(error.message);
-    } else {
-      const { error } = await supabase.from("client_assignments").insert({
-        tenant_id: user.tenantId,
-        client_id: clientId,
-        user_id: memberId,
+  const handleToggleAssignment = async (memberId: string, assigned: boolean) => {
+    if (!client) return;
+    try {
+      await doToggleAssignment({
+        data: {
+          clientId,
+          memberId,
+          assigned,
+          clientName: client.name,
+        },
       });
-      if (error) return void toast.error(error.message);
+      queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update assignment");
     }
-    logActivity({
-      tenantId: user.tenantId,
-      userId: user.userId,
-      action: `${assigned ? "Unassigned" : "Assigned"} team member on client ${client.name}`,
-      entityType: "client",
-      entityId: clientId,
-    });
-    queryClient.invalidateQueries({ queryKey: ["client", clientId] });
   };
 
   const handleCreateLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -124,18 +92,15 @@ function ClientDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (!client || !user?.tenantId) return;
+    if (!client) return;
     if (!confirm(`Delete client ${client.name}? This removes all their requests and documents.`)) return;
-    const { error } = await supabase.from("clients").delete().eq("id", clientId);
-    if (error) return void toast.error(error.message);
-    logActivity({
-      tenantId: user.tenantId,
-      userId: user.userId,
-      action: `Deleted client ${client.name}`,
-      entityType: "client",
-    });
-    toast.success("Client deleted");
-    navigate({ to: "/clients" });
+    try {
+      await doDeleteClient({ data: { clientId, clientName: client.name } });
+      toast.success("Client deleted");
+      navigate({ to: "/clients" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete client");
+    }
   };
 
   if (isLoading) {
@@ -223,13 +188,13 @@ function ClientDetailPage() {
                   <li key={r.id} className="py-3">
                     <Link
                       to="/requests/$requestId"
-                      params={{ requestId: r.id }}
+                      params={{ requestId: String(r.id) }}
                       className="flex items-center justify-between gap-4 hover:text-primary"
                     >
                       <div>
                         <p className="font-medium">{r.title}</p>
                         <p className="text-xs text-muted-foreground">
-                          {(r.financial_years as { label: string } | null)?.label} ·{" "}
+                          {r.fyLabel} ·{" "}
                           {format(new Date(r.created_at), "d MMM yyyy")}
                         </p>
                       </div>
@@ -257,13 +222,13 @@ function ClientDetailPage() {
               {data?.members.length ? (
                 <ul className="space-y-3">
                   {data.members.map((m) => {
-                    const assigned = data.assignedIds.has(m.userId);
+                    const assigned = (data.assignedIds ?? []).includes(m.userId);
                     return (
                       <li key={m.userId} className="flex items-center gap-3">
                         <Checkbox
                           id={`assign-${m.userId}`}
                           checked={assigned}
-                          onCheckedChange={() => toggleAssignment(m.userId, assigned)}
+                          onCheckedChange={() => handleToggleAssignment(m.userId, assigned)}
                         />
                         <label htmlFor={`assign-${m.userId}`} className="flex-1 cursor-pointer text-sm">
                           {m.name}

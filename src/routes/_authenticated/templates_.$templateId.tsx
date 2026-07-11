@@ -1,9 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
+import {
+  getTemplate,
+  addTemplateItem,
+  updateTemplateItem,
+  removeTemplateItem,
+  updateTemplate,
+  deleteTemplate,
+} from "@/lib/template-detail.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +26,8 @@ export const Route = createFileRoute("/_authenticated/templates_/$templateId")({
 });
 
 function TemplateEditorPage() {
-  const { templateId } = Route.useParams();
+  const { templateId: templateIdParam } = Route.useParams();
+  const templateId = Number(templateIdParam);
   const { data: user } = useCurrentUser();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -26,16 +35,16 @@ function TemplateEditorPage() {
   const [newItem, setNewItem] = useState("");
   const [newCategory, setNewCategory] = useState("");
 
-  const { data: template, isLoading } = useQuery({
+  const fetchTemplate = useServerFn(getTemplate);
+  const doAddItem = useServerFn(addTemplateItem);
+  const doUpdateItem = useServerFn(updateTemplateItem);
+  const doRemoveItem = useServerFn(removeTemplateItem);
+  const doUpdateTemplate = useServerFn(updateTemplate);
+  const doDeleteTemplate = useServerFn(deleteTemplate);
+
+  const { data: templateData, isLoading } = useQuery({
     queryKey: ["template", templateId],
-    queryFn: async () => {
-      const [tpl, items] = await Promise.all([
-        supabase.from("document_templates").select("*").eq("id", templateId).maybeSingle(),
-        supabase.from("template_items").select("*").eq("template_id", templateId).order("sort_order"),
-      ]);
-      if (tpl.error) throw tpl.error;
-      return { template: tpl.data, items: items.data ?? [] };
-    },
+    queryFn: () => fetchTemplate({ data: { templateId } }),
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["template", templateId] });
@@ -43,49 +52,69 @@ function TemplateEditorPage() {
   const addItem = async () => {
     const name = newItem.trim();
     if (!name) return;
-    const nextSort = (template?.items.at(-1)?.sort_order ?? -1) + 1;
-    const { error } = await supabase.from("template_items").insert({
-      template_id: templateId,
-      name,
-      category: newCategory.trim() || null,
-      sort_order: nextSort,
-      is_required: true,
-      is_repeatable: false,
-    });
-    if (error) return void toast.error(error.message);
-    setNewItem("");
-    invalidate();
+    const nextSort = (templateData?.items.at(-1)?.sort_order ?? -1) + 1;
+    try {
+      await doAddItem({
+        data: {
+          templateId,
+          name,
+          category: newCategory.trim() || null,
+          sortOrder: nextSort,
+        },
+      });
+      setNewItem("");
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add item");
+    }
   };
 
-  const updateItem = async (id: string, patch: Partial<{ name: string; category: string | null; is_required: boolean; is_repeatable: boolean; sort_order: number }>) => {
-    const { error } = await supabase.from("template_items").update(patch).eq("id", id);
-    if (error) return void toast.error(error.message);
-    invalidate();
+  const handleUpdateItem = async (
+    id: number,
+    patch: Partial<{ name: string; category: string | null; is_required: boolean; is_repeatable: boolean; sort_order: number }>
+  ) => {
+    try {
+      await doUpdateItem({ data: { itemId: id, patch } });
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update item");
+    }
   };
 
-  const removeItem = async (id: string) => {
-    const { error } = await supabase.from("template_items").delete().eq("id", id);
-    if (error) return void toast.error(error.message);
-    invalidate();
+  const handleRemoveItem = async (id: number) => {
+    try {
+      await doRemoveItem({ data: { itemId: id } });
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete item");
+    }
   };
 
-  const updateTemplate = async (patch: Partial<{ name: string; description: string | null }>) => {
-    const { error } = await supabase.from("document_templates").update(patch).eq("id", templateId);
-    if (error) return void toast.error(error.message);
-    invalidate();
-    toast.success("Saved");
+  const handleUpdateTemplate = async (patch: Partial<{ name: string; description: string | null }>) => {
+    try {
+      await doUpdateTemplate({ data: { templateId, patch } });
+      invalidate();
+      toast.success("Saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    }
   };
 
-  const deleteTemplate = async () => {
+  const handleDeleteTemplate = async () => {
     if (!confirm("Delete this template? Existing requests are unaffected.")) return;
-    const { error } = await supabase.from("document_templates").delete().eq("id", templateId);
-    if (error) return void toast.error(error.message);
-    toast.success("Template deleted");
-    navigate({ to: "/templates" });
+    try {
+      await doDeleteTemplate({ data: { templateId } });
+      toast.success("Template deleted");
+      navigate({ to: "/templates" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete template");
+    }
   };
 
   if (isLoading) return <AppShell><p className="text-muted-foreground">Loading…</p></AppShell>;
-  if (!template?.template) return <AppShell><p>Template not found.</p></AppShell>;
+  if (!templateData?.template) return <AppShell><p>Template not found.</p></AppShell>;
+
+  const tpl = templateData.template;
 
   return (
     <AppShell>
@@ -96,20 +125,20 @@ function TemplateEditorPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="flex-1 space-y-3">
           <Input
-            defaultValue={template.template.name}
-            onBlur={(e) => e.target.value !== template.template!.name && updateTemplate({ name: e.target.value })}
+            defaultValue={tpl.name}
+            onBlur={(e) => e.target.value !== tpl.name && handleUpdateTemplate({ name: e.target.value })}
             disabled={!canManage}
             className="font-display text-2xl font-semibold"
           />
           <Input
-            defaultValue={template.template.description ?? ""}
+            defaultValue={tpl.description ?? ""}
             placeholder="Description"
-            onBlur={(e) => updateTemplate({ description: e.target.value || null })}
+            onBlur={(e) => handleUpdateTemplate({ description: e.target.value || null })}
             disabled={!canManage}
           />
         </div>
         {canManage && (
-          <Button variant="outline" onClick={deleteTemplate} className="text-destructive">
+          <Button variant="outline" onClick={handleDeleteTemplate} className="text-destructive">
             <Trash2 className="mr-2 h-4 w-4" /> Delete
           </Button>
         )}
@@ -117,35 +146,35 @@ function TemplateEditorPage() {
 
       <Card>
         <CardContent className="pt-6">
-          <p className="mb-3 font-medium">Checklist items ({template.items.length})</p>
+          <p className="mb-3 font-medium">Checklist items ({templateData.items.length})</p>
           <ul className="space-y-2">
-            {template.items.map((it) => (
+            {templateData.items.map((it) => (
               <li key={it.id} className="flex items-center gap-3 rounded-md border border-border p-3">
                 <GripVertical className="h-4 w-4 text-muted-foreground" />
                 <div className="flex-1 space-y-1">
                   <Input
                     defaultValue={it.name}
-                    onBlur={(e) => e.target.value !== it.name && updateItem(it.id, { name: e.target.value })}
+                    onBlur={(e) => e.target.value !== it.name && handleUpdateItem(it.id, { name: e.target.value })}
                     disabled={!canManage}
                   />
                   <Input
                     defaultValue={it.category ?? ""}
                     placeholder="Category (optional)"
-                    onBlur={(e) => updateItem(it.id, { category: e.target.value || null })}
+                    onBlur={(e) => handleUpdateItem(it.id, { category: e.target.value || null })}
                     disabled={!canManage}
                     className="text-xs"
                   />
                 </div>
                 <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Checkbox checked={it.is_required} onCheckedChange={(v) => updateItem(it.id, { is_required: !!v })} disabled={!canManage} />
+                  <Checkbox checked={it.is_required} onCheckedChange={(v) => handleUpdateItem(it.id, { is_required: !!v })} disabled={!canManage} />
                   Required
                 </label>
                 <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Checkbox checked={it.is_repeatable} onCheckedChange={(v) => updateItem(it.id, { is_repeatable: !!v })} disabled={!canManage} />
+                  <Checkbox checked={it.is_repeatable} onCheckedChange={(v) => handleUpdateItem(it.id, { is_repeatable: !!v })} disabled={!canManage} />
                   Multi-file
                 </label>
                 {canManage && (
-                  <Button variant="ghost" size="icon" onClick={() => removeItem(it.id)}>
+                  <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(it.id)}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 )}

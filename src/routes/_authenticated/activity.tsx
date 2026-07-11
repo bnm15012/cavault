@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
+import { getActivityLogs } from "@/lib/activity.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { format } from "date-fns";
@@ -12,23 +13,11 @@ export const Route = createFileRoute("/_authenticated/activity")({
 });
 
 function ActivityPage() {
+  const fetchLogs = useServerFn(getActivityLogs);
+
   const { data: logs, isLoading } = useQuery({
     queryKey: ["activity"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("activity_logs")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (error) throw error;
-      const userIds = [...new Set((data ?? []).map((l) => l.user_id).filter(Boolean) as string[])];
-      const profileMap = new Map<string, string>();
-      if (userIds.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", userIds);
-        (profs ?? []).forEach((p) => profileMap.set(p.id, p.full_name));
-      }
-      return (data ?? []).map((l) => ({ ...l, userName: l.user_id ? profileMap.get(l.user_id) ?? "User" : "System" }));
-    },
+    queryFn: () => fetchLogs(),
   });
 
   return (

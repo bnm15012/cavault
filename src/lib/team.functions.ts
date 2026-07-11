@@ -1,10 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import bcrypt from "bcryptjs";
+import { requireAuth } from "@/lib/auth-middleware";
 import { getDb } from "@/lib/db";
-import { activity_logs, clients, profiles, user_roles } from "@/lib/db/schema";
+import { activity_logs, clients, profiles, user_roles, users } from "@/lib/db/schema";
 import { getUserTenant, hasPermission } from "@/lib/db/helpers";
+
+const BCRYPT_ROUNDS = 10;
 
 const inviteTeamSchema = z.object({
   email: z.string().trim().email().max(255),
@@ -15,7 +18,7 @@ const inviteTeamSchema = z.object({
 });
 
 export const inviteTeamMember = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: unknown) => inviteTeamSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { userId } = context;
@@ -26,36 +29,53 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
     const tenantId = await getUserTenant(userId);
     if (!tenantId) throw new Error("No firm found for your account");
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
-      email: data.email,
-      password: data.password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: data.fullName,
-        phone: data.phone ?? null,
-        tenant_id: tenantId,
-        app_role: data.role,
-      },
-    });
-    if (error) {
-      throw new Error(
-        error.message.includes("already been registered")
-          ? "A user with this email already exists"
-          : error.message,
-      );
-    }
+    const db = getDb();
+    const email = data.email.toLowerCase().trim();
+    const now = new Date();
 
-    await getDb().insert(activity_logs).values({
+    // Check duplicate
+    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    if (existing) throw new Error("A user with this email already exists");
+
+    const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+
+    const [result] = await db.insert(users).values({
+      email,
+      password_hash: passwordHash,
+      full_name: data.fullName,
+      email_confirmed: true,
+      created_at: now,
+      updated_at: now,
+    });
+    const newUserId = String((result as any).insertId);
+
+    // Create profile
+    await db.insert(profiles).values({
+      id: newUserId,
+      full_name: data.fullName,
+      email,
+      tenant_id: tenantId,
+      created_at: now,
+      updated_at: now,
+    });
+
+    // Assign role
+    await db.insert(user_roles).values({
+      user_id: newUserId,
+      role: data.role,
+      tenant_id: tenantId,
+    });
+
+    await db.insert(activity_logs).values({
       tenant_id: tenantId,
       user_id: userId,
       action: `Added team member ${data.fullName} (${data.role})`,
       entity_type: "user",
-      entity_id: created.user.id,
-      created_at: new Date(),
+      entity_id: newUserId,
+      created_at: now,
     });
 
-    return { userId: created.user.id };
+    return { userId: newUserId };
   });
 
 const clientLoginSchema = z.object({
@@ -65,7 +85,7 @@ const clientLoginSchema = z.object({
 });
 
 export const createClientLogin = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: unknown) => clientLoginSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { userId } = context;
@@ -76,8 +96,11 @@ export const createClientLogin = createServerFn({ method: "POST" })
     const tenantId = await getUserTenant(userId);
     if (!tenantId) throw new Error("No firm found for your account");
 
-    // Verify the client belongs to this tenant (tenant-scoped read)
-    const clientRows = await getDb()
+    const db = getDb();
+    const email = data.email.toLowerCase().trim();
+    const now = new Date();
+
+    const clientRows = await db
       .select({ id: clients.id, name: clients.name, portal_user_id: clients.portal_user_id })
       .from(clients)
       .where(eq(clients.id, data.clientId))
@@ -86,42 +109,57 @@ export const createClientLogin = createServerFn({ method: "POST" })
     if (!client) throw new Error("Client not found");
     if (client.portal_user_id) throw new Error("This client already has a portal login");
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
-      email: data.email,
-      password: data.password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: client.name,
-        tenant_id: tenantId,
-        app_role: "client",
-        client_id: data.clientId,
-      },
-    });
-    if (error) {
-      throw new Error(
-        error.message.includes("already been registered")
-          ? "A user with this email already exists"
-          : error.message,
-      );
-    }
+    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    if (existing) throw new Error("A user with this email already exists");
 
-    await getDb().insert(activity_logs).values({
+    const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+
+    const [result] = await db.insert(users).values({
+      email,
+      password_hash: passwordHash,
+      full_name: client.name,
+      email_confirmed: true,
+      created_at: now,
+      updated_at: now,
+    });
+    const newUserId = String((result as any).insertId);
+
+    // Profile
+    await db.insert(profiles).values({
+      id: newUserId,
+      full_name: client.name,
+      email,
+      tenant_id: tenantId,
+      created_at: now,
+      updated_at: now,
+    });
+
+    // Client role
+    await db.insert(user_roles).values({
+      user_id: newUserId,
+      role: "client",
+      tenant_id: tenantId,
+    });
+
+    // Link client record to portal user
+    await db.update(clients).set({ portal_user_id: newUserId }).where(eq(clients.id, data.clientId));
+
+    await db.insert(activity_logs).values({
       tenant_id: tenantId,
       user_id: userId,
       action: `Created portal login for client ${client.name}`,
       entity_type: "client",
       entity_id: String(data.clientId),
-      created_at: new Date(),
+      created_at: now,
     });
 
-    return { userId: created.user.id };
+    return { userId: newUserId };
   });
 
-const removeMemberSchema = z.object({ memberUserId: z.string().uuid() });
+const removeMemberSchema = z.object({ memberUserId: z.string() });
 
 export const removeTeamMember = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuth])
   .inputValidator((input: unknown) => removeMemberSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { userId } = context;
@@ -133,20 +171,18 @@ export const removeTeamMember = createServerFn({ method: "POST" })
     const tenantId = await getUserTenant(userId);
     if (!tenantId) throw new Error("No firm found for your account");
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const db = getDb();
 
-    // Confirm target belongs to the same tenant and is not a CA admin
-    const profileRows = await getDb()
+    const [targetProfile] = await db
       .select({ tenant_id: profiles.tenant_id, full_name: profiles.full_name })
       .from(profiles)
       .where(eq(profiles.id, data.memberUserId))
       .limit(1);
-    const targetProfile = profileRows[0];
     if (!targetProfile || targetProfile.tenant_id !== tenantId) {
       throw new Error("Team member not found in your firm");
     }
 
-    const targetRoles = await getDb()
+    const targetRoles = await db
       .select({ role: user_roles.role })
       .from(user_roles)
       .where(eq(user_roles.user_id, data.memberUserId));
@@ -154,10 +190,12 @@ export const removeTeamMember = createServerFn({ method: "POST" })
       throw new Error("Firm admins cannot be removed");
     }
 
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.memberUserId);
-    if (error) throw new Error(error.message);
+    // Delete user (cascades via FK: sessions, profiles, user_roles)
+    await db.delete(user_roles).where(eq(user_roles.user_id, data.memberUserId));
+    await db.delete(profiles).where(eq(profiles.id, data.memberUserId));
+    await db.delete(users).where(eq(users.id, parseInt(data.memberUserId)));
 
-    await getDb().insert(activity_logs).values({
+    await db.insert(activity_logs).values({
       tenant_id: tenantId,
       user_id: userId,
       action: `Removed team member ${targetProfile.full_name}`,

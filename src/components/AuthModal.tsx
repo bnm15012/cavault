@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { bootstrapNewUser, getUserRoles } from "@/lib/auth.functions";
+import { signIn, signUp, sendOtp, verifyOtp, resetPassword, getSession } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,7 +49,12 @@ interface AuthModalProps {
 function ForgotPassword({ onBack }: { onBack: () => void }) {
   const [step, setStep] = useState<ForgotStep>("email");
   const [email, setEmail] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const sendOtpFn = useServerFn(sendOtp);
+  const verifyOtpFn = useServerFn(verifyOtp);
+  const resetPasswordFn = useServerFn(resetPassword);
 
   const handleSendOtp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -56,17 +62,15 @@ function ForgotPassword({ onBack }: { onBack: () => void }) {
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setEmail(parsed.data.email);
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      email: parsed.data.email,
-      options: { shouldCreateUser: false },
-    });
-    setLoading(false);
-    if (error) {
-      toast.error(error.message.includes("not found") ? "No account found with this email." : error.message);
-      return;
+    try {
+      await sendOtpFn({ data: { email: parsed.data.email } });
+      toast.success("OTP sent! Check your email.");
+      setStep("otp");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to send OTP. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    toast.success("OTP sent! Check your email.");
-    setStep("otp");
   };
 
   const handleVerifyOtp = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -74,17 +78,15 @@ function ForgotPassword({ onBack }: { onBack: () => void }) {
     const parsed = otpSchema.safeParse({ otp: (e.currentTarget.elements.namedItem("otp") as HTMLInputElement).value });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token: parsed.data.otp,
-      type: "email",
-    });
-    setLoading(false);
-    if (error) {
+    try {
+      const result = await verifyOtpFn({ data: { email, code: parsed.data.otp } });
+      setResetToken(result.resetToken);
+      setStep("newPassword");
+    } catch (err: any) {
       toast.error("Invalid or expired OTP. Please try again.");
-      return;
+    } finally {
+      setLoading(false);
     }
-    setStep("newPassword");
   };
 
   const handleSetPassword = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -96,20 +98,27 @@ function ForgotPassword({ onBack }: { onBack: () => void }) {
     });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setLoading(true);
-    const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
-    setLoading(false);
-    if (error) { toast.error(error.message); return; }
-    // Sign out so user logs in fresh with new password
-    await supabase.auth.signOut();
-    toast.success("Password updated! Please sign in with your new password.");
-    onBack();
+    try {
+      await resetPasswordFn({ data: { email, resetToken, newPassword: parsed.data.password } });
+      toast.success("Password updated! Please sign in with your new password.");
+      onBack();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to update password. Please start over.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleResend = async () => {
     setLoading(true);
-    await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
-    setLoading(false);
-    toast.success("New OTP sent.");
+    try {
+      await sendOtpFn({ data: { email } });
+      toast.success("New OTP sent.");
+    } catch {
+      toast.error("Failed to resend OTP.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -207,8 +216,13 @@ function ForgotPassword({ onBack }: { onBack: () => void }) {
 // ── Main modal ────────────────────────────────────────────────────────────────
 export function AuthModal({ open, onOpenChange, defaultTab = "login" }: AuthModalProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
+
+  const signInFn = useServerFn(signIn);
+  const signUpFn = useServerFn(signUp);
+  const getSessionFn = useServerFn(getSession);
 
   // Reset forgot state whenever modal closes
   const handleOpenChange = (val: boolean) => {
@@ -217,11 +231,10 @@ export function AuthModal({ open, onOpenChange, defaultTab = "login" }: AuthModa
   };
 
   async function redirectAfterLogin() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const roles = await getUserRoles({ data: { userId: user.id } });
+    await queryClient.invalidateQueries({ queryKey: ["current-user"] });
+    const session = await getSessionFn();
     handleOpenChange(false);
-    navigate({ to: roles.includes("client") ? "/portal" : "/dashboard" });
+    navigate({ to: session?.isClient ? "/portal" : "/dashboard" });
   }
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -230,13 +243,19 @@ export function AuthModal({ open, onOpenChange, defaultTab = "login" }: AuthModa
     const parsed = loginSchema.safeParse({ email: form.get("email"), password: form.get("password") });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
-    setLoading(false);
-    if (error) {
-      toast.error(error.message === "Invalid login credentials" ? "Incorrect email or password" : error.message);
-      return;
+    try {
+      await signInFn({ data: parsed.data });
+      await redirectAfterLogin();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      toast.error(
+        msg.includes("Invalid email or password") ? "Incorrect email or password" :
+        msg.includes("confirm your email") ? msg :
+        msg || "Sign in failed. Please try again.",
+      );
+    } finally {
+      setLoading(false);
     }
-    await redirectAfterLogin();
   };
 
   const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -250,50 +269,26 @@ export function AuthModal({ open, onOpenChange, defaultTab = "login" }: AuthModa
     });
     if (!parsed.success) { toast.error(parsed.error.issues[0].message); return; }
     setLoading(true);
-    const skipConfirmation = import.meta.env.VITE_SKIP_EMAIL_CONFIRMATION === "true";
-    const { data, error } = await supabase.auth.signUp({
-      email: parsed.data.email,
-      password: parsed.data.password,
-      options: {
-        // Local dev (VITE_SKIP_EMAIL_CONFIRMATION=true): no redirect, Supabase
-        // confirms immediately (requires "Confirm email" OFF in Supabase dashboard).
-        // Production: send real confirmation email that redirects back to the app.
-        emailRedirectTo: skipConfirmation
-          ? undefined
-          : `${import.meta.env.VITE_APP_URL ?? window.location.origin}/auth`,
-        data: { full_name: parsed.data.fullName, firm_name: parsed.data.firmName },
-      },
-    });
-    setLoading(false);
-    if (error) {
-      toast.error(
-        error.message.includes("already registered")
-          ? "This email is already registered. Try signing in instead."
-          : error.message,
-      );
-      return;
-    }
-    if (data.session && data.user) {
-      try {
-        await bootstrapNewUser({
-          data: {
-            userId: data.user.id,
-            email: data.user.email ?? parsed.data.email,
-            fullName: parsed.data.fullName,
-            firmName: parsed.data.firmName,
-          },
-        });
-      } catch (err) {
-        console.error("Failed to bootstrap new user in MySQL:", err);
-        toast.error("Account created but workspace setup failed. Please contact support.");
-        return;
+    try {
+      const result = await signUpFn({ data: parsed.data });
+      if (result.confirmed) {
+        toast.success("Welcome! Your firm workspace is ready.");
+        await queryClient.invalidateQueries({ queryKey: ["current-user"] });
+        handleOpenChange(false);
+        navigate({ to: "/dashboard" });
+      } else {
+        toast.success("Check your email to confirm your account, then sign in.");
+        handleOpenChange(false);
       }
-      toast.success("Welcome! Your firm workspace is ready.");
-      handleOpenChange(false);
-      navigate({ to: "/dashboard" });
-    } else {
-      toast.success("Check your email to confirm your account, then sign in.");
-      handleOpenChange(false);
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      toast.error(
+        msg.includes("already registered")
+          ? "This email is already registered. Try signing in instead."
+          : msg || "Registration failed. Please try again.",
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
