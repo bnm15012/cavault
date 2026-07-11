@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
+import { z } from "zod";
 import { toast } from "sonner";
 import { useCurrentUser, hasPerm } from "@/hooks/use-current-user";
 import { createClientLogin } from "@/lib/team.functions";
@@ -9,6 +10,7 @@ import {
   getClientDetail,
   toggleAssignment,
   deleteClient,
+  updateClient,
 } from "@/lib/client-detail.functions";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -24,8 +26,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { ArrowLeft, KeyRound, UserPlus } from "lucide-react";
+import { ArrowLeft, KeyRound, Pencil, UserPlus } from "lucide-react";
 import { format } from "date-fns";
+
+const clientSchema = z.object({
+  name: z.string().trim().min(2, "Name is required").max(150),
+  pan: z.string().trim().max(10).optional().or(z.literal("")),
+  gstin: z.string().trim().max(15).optional().or(z.literal("")),
+  mobile: z.string().trim().max(15).optional().or(z.literal("")),
+  email: z.string().trim().email("Invalid email").max(255).optional().or(z.literal("")),
+});
 
 export const Route = createFileRoute("/_authenticated/clients_/$clientId")({
   head: () => ({ meta: [{ title: "Client — CADesk" }] }),
@@ -42,8 +52,11 @@ function ClientDetailPage() {
   const fetchClientDetail = useServerFn(getClientDetail);
   const doToggleAssignment = useServerFn(toggleAssignment);
   const doDeleteClient = useServerFn(deleteClient);
+  const doUpdateClient = useServerFn(updateClient);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["client", clientId],
@@ -91,6 +104,36 @@ function ClientDetailPage() {
     }
   };
 
+  const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!client) return;
+    const form = new FormData(e.currentTarget);
+    const parsed = clientSchema.safeParse({
+      name: form.get("name"),
+      pan: form.get("pan"),
+      gstin: form.get("gstin"),
+      mobile: form.get("mobile"),
+      email: form.get("email"),
+    });
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0].message);
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await doUpdateClient({
+        data: { clientId, ...parsed.data },
+      });
+      toast.success("Client updated");
+      setEditOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update client");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!client) return;
     if (!confirm(`Delete client ${client.name}? This removes all their requests and documents.`)) return;
@@ -135,6 +178,11 @@ function ClientDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          {hasPerm(user, "clients.edit") && (
+            <Button variant="outline" onClick={() => setEditOpen(true)}>
+              <Pencil className="mr-2 h-4 w-4" /> Edit
+            </Button>
+          )}
           {!client.portal_user_id && hasPerm(user, "clients.edit") && (
             <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
               <DialogTrigger asChild>
@@ -247,6 +295,44 @@ function ClientDetailPage() {
           </Card>
         )}
       </div>
+
+      {/* Edit client dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Client</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEdit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="ed-name">Client name *</Label>
+              <Input id="ed-name" name="name" required defaultValue={client.name} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ed-pan">PAN</Label>
+                <Input id="ed-pan" name="pan" placeholder="ABCDE1234F" maxLength={10} defaultValue={client.pan ?? ""} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ed-gstin">GSTIN</Label>
+                <Input id="ed-gstin" name="gstin" maxLength={15} defaultValue={client.gstin ?? ""} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ed-mobile">Mobile</Label>
+                <Input id="ed-mobile" name="mobile" defaultValue={client.mobile ?? ""} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ed-email">Email</Label>
+                <Input id="ed-email" name="email" type="email" defaultValue={client.email ?? ""} />
+              </div>
+            </div>
+            <Button type="submit" className="w-full" disabled={editSaving}>
+              {editSaving ? "Saving…" : "Save changes"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

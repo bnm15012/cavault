@@ -18,6 +18,7 @@ import {
   X,
   FileText,
   KeyRound,
+  ChevronDown,
 } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { signOut } from "@/lib/auth";
@@ -26,6 +27,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface NavItem {
   to: string;
@@ -118,37 +127,44 @@ export function AppShell({ children }: { children: ReactNode }) {
     </div>
   );
 
-  const sidebarFooter = (
-    <div className="border-t border-sidebar-border px-4 py-4">
-      <div className="mb-3 px-2">
-        <p className="truncate text-sm font-medium text-sidebar-accent-foreground">
-          {user?.fullName || user?.email}
-        </p>
-        <p className="truncate text-xs text-sidebar-foreground/60">{user?.tenantName}</p>
-        {user?.isClient && (
-          <Badge variant="outline" className="mt-1 border-sidebar-border text-sidebar-foreground/70">
-            Client portal
-          </Badge>
-        )}
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setChangePassOpen(true)}
-        className="w-full justify-start text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-      >
-        <KeyRound className="mr-2 h-4 w-4" /> Change password
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={handleSignOut}
-        className="w-full justify-start text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-      >
-        <LogOut className="mr-2 h-4 w-4" /> Sign out
-      </Button>
-    </div>
+  const userDropdown = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="flex items-center gap-2 text-sm font-medium text-foreground hover:bg-accent"
+        >
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">
+            {(user?.fullName || user?.email || "?")[0].toUpperCase()}
+          </span>
+          <span className="hidden sm:block max-w-[140px] truncate">
+            {user?.fullName || user?.email}
+          </span>
+          <ChevronDown className="h-4 w-4 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel className="font-normal">
+          <p className="text-sm font-medium truncate">{user?.fullName || user?.email}</p>
+          <p className="text-xs text-muted-foreground truncate">{user?.tenantName}</p>
+          {user?.isClient && (
+            <Badge variant="outline" className="mt-1 text-xs">Client portal</Badge>
+          )}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setChangePassOpen(true)}>
+          <KeyRound className="mr-2 h-4 w-4" /> Change password
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+          <LogOut className="mr-2 h-4 w-4" /> Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
+
+  const sidebarFooter = null;
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -158,8 +174,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-sidebar lg:flex">
         {sidebarHeader}
         {nav}
-        {sidebarFooter}
       </aside>
+
+      {/* Desktop top bar */}
+      <div className="fixed inset-x-0 top-0 z-20 hidden h-14 items-center justify-end border-b border-border bg-background px-6 lg:flex lg:ml-64">
+        {userDropdown}
+      </div>
 
       {/* Mobile top bar */}
       <div className="fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-sidebar px-4 py-3 lg:hidden">
@@ -171,15 +191,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             CADesk
           </span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-sidebar-foreground"
-          onClick={handleSignOut}
-          aria-label="Sign out"
-        >
-          <LogOut className="h-5 w-5" />
-        </Button>
+        {userDropdown}
       </div>
 
       {/* Mobile full menu overlay (opened from bottom "More") */}
@@ -205,7 +217,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Button>
           </div>
           {nav}
-          {sidebarFooter}
         </div>
       )}
 
@@ -243,7 +254,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       </nav>
 
-      <main className="flex-1 pb-20 pt-14 lg:ml-64 lg:pb-0 lg:pt-0">
+      <main className="flex-1 pb-20 pt-14 lg:ml-64 lg:pb-0 lg:pt-14">
         <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8">{children}</div>
       </main>
     </div>

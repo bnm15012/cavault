@@ -163,6 +163,50 @@ export const toggleAssignment = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+const updateClientSchema = z.object({
+  clientId: z.number().int().positive(),
+  name: z.string().trim().min(2).max(150),
+  pan: z.string().trim().max(10).optional().or(z.literal("")),
+  gstin: z.string().trim().max(15).optional().or(z.literal("")),
+  mobile: z.string().trim().max(15).optional().or(z.literal("")),
+  email: z.string().trim().email().max(255).optional().or(z.literal("")),
+});
+
+export const updateClient = createServerFn({ method: "POST" })
+  .middleware([requireAuth])
+  .validator((input: unknown) => updateClientSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const tenantId = await getUserTenant(userId);
+    if (!tenantId) throw new Error("No firm found for your account");
+
+    const db = getDb();
+    const now = new Date();
+
+    await db
+      .update(clients)
+      .set({
+        name: data.name,
+        pan: data.pan ? data.pan.toUpperCase() : null,
+        gstin: data.gstin ? data.gstin.toUpperCase() : null,
+        mobile: data.mobile || null,
+        email: data.email || null,
+        updated_at: now,
+      })
+      .where(and(eq(clients.id, data.clientId), eq(clients.tenant_id, tenantId)));
+
+    await db.insert(activity_logs).values({
+      tenant_id: tenantId,
+      user_id: userId,
+      action: `Updated client ${data.name}`,
+      entity_type: "client",
+      entity_id: String(data.clientId),
+      created_at: now,
+    });
+
+    return { ok: true };
+  });
+
 const deleteClientSchema = z.object({
   clientId: z.number().int().positive(),
   clientName: z.string(),
