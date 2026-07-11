@@ -14,6 +14,7 @@ import {
   Landmark,
   LogOut,
   Menu,
+  MoreHorizontal,
   X,
   FileText,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils";
 interface NavItem {
   to: string;
   label: string;
+  short?: string;
   icon: typeof LayoutDashboard;
 }
 
@@ -55,21 +57,24 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (user?.isFirmMember) {
     firmNav.push({ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard });
     firmNav.push({ to: "/clients", label: "Clients", icon: Users });
-    firmNav.push({ to: "/requests", label: "Document Requests", icon: FolderOpen });
+    firmNav.push({ to: "/requests", label: "Document Requests", short: "Requests", icon: FolderOpen });
     firmNav.push({ to: "/templates", label: "Templates", icon: FileStack });
-    firmNav.push({ to: "/financial-years", label: "Financial Years", icon: CalendarRange });
+    firmNav.push({ to: "/financial-years", label: "Financial Years", short: "FY", icon: CalendarRange });
     firmNav.push({ to: "/team", label: "Team", icon: UserCog });
     if (hasPerm(user, "settings.edit")) {
-      firmNav.push({ to: "/roles", label: "Roles & Permissions", icon: ShieldCheck });
+      firmNav.push({ to: "/roles", label: "Roles & Permissions", short: "Roles", icon: ShieldCheck });
     }
-    firmNav.push({ to: "/activity", label: "Activity Log", icon: History });
+    firmNav.push({ to: "/activity", label: "Activity Log", short: "Activity", icon: History });
     if (user.isCaAdmin) {
       firmNav.push({ to: "/billing", label: "Billing", icon: CreditCard });
     }
   }
   if (user?.isClient) {
-    firmNav.push({ to: "/portal", label: "My Documents", icon: FileText });
+    firmNav.push({ to: "/portal", label: "My Documents", short: "Documents", icon: FileText });
   }
+
+  const bottomNavItems = firmNav.slice(0, 4);
+  const hasMoreItems = firmNav.length > bottomNavItems.length;
 
   const nav = (
     <nav className="flex flex-1 flex-col gap-1 px-3">
@@ -139,7 +144,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {sidebarFooter}
       </aside>
 
-      {/* Mobile top bar + drawer */}
+      {/* Mobile top bar */}
       <div className="fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-sidebar px-4 py-3 lg:hidden">
         <div className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
@@ -153,20 +158,75 @@ export function AppShell({ children }: { children: ReactNode }) {
           variant="ghost"
           size="icon"
           className="text-sidebar-foreground"
-          onClick={() => setMobileOpen((o) => !o)}
-          aria-label="Toggle menu"
+          onClick={handleSignOut}
+          aria-label="Sign out"
         >
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          <LogOut className="h-5 w-5" />
         </Button>
       </div>
+
+      {/* Mobile full menu overlay (opened from bottom "More") */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-20 flex flex-col bg-sidebar pt-16 lg:hidden">
+        <div className="fixed inset-0 z-40 flex flex-col bg-sidebar lg:hidden">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+                <Menu className="h-4 w-4" />
+              </span>
+              <span className="font-display text-base font-semibold text-sidebar-accent-foreground">
+                Menu
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-sidebar-foreground"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close menu"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
           {nav}
           {sidebarFooter}
         </div>
       )}
 
-      <main className="flex-1 pt-14 lg:ml-64 lg:pt-0">
+      {/* Mobile bottom navigation */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-sidebar-border bg-sidebar pb-[env(safe-area-inset-bottom)] lg:hidden">
+        {bottomNavItems.map((item) => {
+          const active = pathname === item.to || pathname.startsWith(item.to + "/");
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              onClick={() => setMobileOpen(false)}
+              className={cn(
+                "flex flex-1 flex-col items-center gap-1 py-2 text-[10px] font-medium transition-colors",
+                active
+                  ? "text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/60 hover:text-sidebar-accent-foreground",
+              )}
+            >
+              <item.icon className="h-5 w-5" />
+              {item.short ?? item.label}
+            </Link>
+          );
+        })}
+        {hasMoreItems && (
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="flex flex-1 flex-col items-center gap-1 py-2 text-[10px] font-medium text-sidebar-foreground/60 transition-colors hover:text-sidebar-accent-foreground"
+            aria-label="More options"
+          >
+            <MoreHorizontal className="h-5 w-5" />
+            More
+          </button>
+        )}
+      </nav>
+
+      <main className="flex-1 pb-20 pt-14 lg:ml-64 lg:pb-0 lg:pt-0">
         <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8">{children}</div>
       </main>
     </div>
