@@ -47,6 +47,7 @@ type ClientRow = { id: number; name: string; pan: string | null; gstin: string |
 
 function ClientsPage() {
   const { data: user } = useCurrentUser();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fetchClients = useServerFn(getClients);
   const createClient = useServerFn(addClient);
