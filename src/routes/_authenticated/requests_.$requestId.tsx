@@ -42,6 +42,7 @@ function RequestDetailPage() {
   const { data: user } = useCurrentUser();
   const qc = useQueryClient();
   const [newItemName, setNewItemName] = useState("");
+  const [showItemHint, setShowItemHint] = useState(false);
   const [activeItemId, setActiveItemId] = useState<number | null>(null);
 
   const canReview = hasPerm(user, "documents.review");
@@ -77,7 +78,11 @@ function RequestDetailPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["request", requestId] });
 
   const addItem = async () => {
-    if (!newItemName.trim()) return;
+    if (!newItemName.trim()) {
+      setShowItemHint(true);
+      return;
+    }
+    setShowItemHint(false);
     const nextSort = (data?.items.at(-1)?.sort_order ?? -1) + 1;
     try {
       await doAddItem({
@@ -307,9 +312,22 @@ function RequestDetailPage() {
       </div>
 
       {canAddItem && (
-        <div className="mt-4 flex gap-2">
-          <Input placeholder="Add checklist item" value={newItemName} onChange={(e) => setNewItemName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addItem()} />
-          <Button onClick={addItem}><Plus className="mr-2 h-4 w-4" /> Add</Button>
+        <div className="mt-4 space-y-1">
+          <div className="flex gap-2">
+            <Input
+              placeholder="e.g. Form 16, PAN copy, Bank statement…"
+              value={newItemName}
+              onChange={(e) => { setNewItemName(e.target.value); if (e.target.value.trim()) setShowItemHint(false); }}
+              onKeyDown={(e) => e.key === "Enter" && addItem()}
+              className={showItemHint ? "border-amber-400 focus-visible:ring-amber-400" : ""}
+            />
+            <Button onClick={addItem}><Plus className="mr-2 h-4 w-4" /> Add</Button>
+          </div>
+          {showItemHint && (
+            <p className="text-xs text-amber-600">
+              Enter the document name you need from the client (e.g. Form 16, PAN copy, Bank statement).
+            </p>
+          )}
         </div>
       )}
     </AppShell>
