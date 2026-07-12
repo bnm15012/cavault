@@ -100,7 +100,7 @@ export const profiles = mysqlTable("profiles", {
 export const user_roles = mysqlTable("user_roles", {
   id: int("id").primaryKey().autoincrement(),
   user_id: varchar("user_id", { length: 36 }).notNull(), // Supabase auth user UUID
-  role: mysqlEnum("role", ["super_admin", "ca_admin", "manager", "staff", "client"]).notNull(),
+  role: mysqlEnum("app_role", ["super_admin", "ca_admin", "manager", "staff", "client"]).notNull(),
   tenant_id: int("tenant_id").references(() => tenants.id),
 });
 
@@ -179,7 +179,7 @@ export const template_items = mysqlTable("template_items", {
 export const document_requests = mysqlTable("document_requests", {
   id: int("id").primaryKey().autoincrement(),
   title: varchar("title", { length: 255 }).notNull(),
-  status: requestStatusEnum.notNull().default("open"),
+  status: mysqlEnum("request_status", ["open", "completed", "archived"]).notNull().default("open"),
   client_id: int("client_id").notNull().references(() => clients.id),
   financial_year_id: int("financial_year_id").notNull().references(() => financial_years.id),
   template_id: int("template_id").references(() => document_templates.id),
@@ -197,7 +197,7 @@ export const request_items = mysqlTable("request_items", {
   sort_order: int("sort_order").notNull().default(0),
   is_required: boolean("is_required").notNull().default(true),
   is_repeatable: boolean("is_repeatable").notNull().default(false),
-  status: docStatusEnum.notNull().default("pending"),
+  status: mysqlEnum("doc_status", ["pending", "uploaded", "under_review", "approved", "rejected", "reupload_required"]).notNull().default("pending"),
   request_id: int("request_id").notNull().references(() => document_requests.id),
   reviewed_by: varchar("reviewed_by", { length: 36 }), // Supabase auth user UUID
   reviewed_at: datetime("reviewed_at"),
@@ -257,7 +257,7 @@ export const plans = mysqlTable("plans", {
 
 export const subscriptions = mysqlTable("subscriptions", {
   id: int("id").primaryKey().autoincrement(),
-  status: subscriptionStatusEnum.notNull().default("trial"),
+  status: mysqlEnum("subscription_status", ["trial", "active", "past_due", "expired", "cancelled"]).notNull().default("trial"),
   billing_period: varchar("billing_period", { length: 20 }).notNull().default("monthly"),
   plan_id: int("plan_id").references(() => plans.id),
   razorpay_subscription_id: varchar("razorpay_subscription_id", { length: 255 }),
