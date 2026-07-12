@@ -198,7 +198,7 @@ export const signUp = createServerFn({ method: "POST" })
       created_at: now,
       updated_at: now,
     });
-    const userId = (insertResult as any).insertId as number;
+    const userId = Number((insertResult as any).insertId);
 
     // Create tenant
     const [tenantResult] = await db.insert(tenants).values({
@@ -207,7 +207,7 @@ export const signUp = createServerFn({ method: "POST" })
       created_at: now,
       updated_at: now,
     });
-    const tenantId = (tenantResult as any).insertId as number;
+    const tenantId = Number((tenantResult as any).insertId);
 
     // Create profile (id = string of userId to keep compatibility with existing schema)
     await db.insert(profiles).values({
@@ -221,7 +221,7 @@ export const signUp = createServerFn({ method: "POST" })
 
     // Assign ca_admin role
     await db.insert(user_roles).values({
-      user_id: String(userId),
+      user_id: `${userId}`,
       role: "ca_admin",
       tenant_id: tenantId,
     });
