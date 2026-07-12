@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "bun run scripts/migrate.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

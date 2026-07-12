@@ -127,7 +127,7 @@ CREATE TABLE `plans` (
 	`max_staff` int NOT NULL DEFAULT 0,
 	`max_templates` int NOT NULL DEFAULT 0,
 	`storage_gb` int NOT NULL DEFAULT 1,
-	`features` json NOT NULL DEFAULT ('[]'),
+	`features` json NOT NULL DEFAULT (JSON_ARRAY()),
 	`is_active` boolean NOT NULL DEFAULT true,
 	`sort_order` int NOT NULL DEFAULT 0,
 	`created_at` datetime NOT NULL DEFAULT '1970-01-01 00:00:00.000',
