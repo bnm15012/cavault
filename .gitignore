@@ -25,6 +25,16 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Editor
+.idea/
+.lovable/
+
+# TanStack auto-generated cache
+.tanstack/
+
+# Supabase (not used — using MySQL/Drizzle)
+supabase/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
