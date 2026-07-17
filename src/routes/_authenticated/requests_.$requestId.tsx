@@ -354,6 +354,7 @@ function RequestDetailPage() {
             canReview={canReview}
             canDelete={canDelete}
             canUpload={!!canUpload}
+            isClient={!!user?.isClient}
             onUpload={(f) => uploadFile(item, f)}
             onDownload={downloadFile}
             onDeleteFile={deleteFile}
@@ -412,13 +413,14 @@ interface CommentRow {
 }
 
 function ItemRow({
-  item, index, canReview, canDelete, canUpload, onUpload, onDownload, onDeleteFile, onRemove, onStatus, onOpenComments, active, comments, onAddComment,
+  item, index, canReview, canDelete, canUpload, isClient, onUpload, onDownload, onDeleteFile, onRemove, onStatus, onOpenComments, active, comments, onAddComment,
 }: {
   item: RequestItem;
   index: number;
   canReview: boolean;
   canDelete: boolean;
   canUpload: boolean;
+  isClient: boolean;
   onUpload: (f: File) => void;
   onDownload: (p: string, n: string) => void;
   onDeleteFile: (id: number, p: string) => void;
@@ -448,7 +450,7 @@ function ItemRow({
 
         {/* Actions */}
         <div className="flex shrink-0 items-center gap-1">
-          {canUpload && (item.is_repeatable || item.document_files.length === 0) && (
+          {canUpload && (item.is_repeatable || item.document_files.length === 0 || isClient) && (
             <>
               <input
                 ref={fileInput}
@@ -493,7 +495,7 @@ function ItemRow({
               <span className="truncate flex-1">{f.file_name}</span>
               <span>{(f.file_size / 1024).toFixed(1)} KB</span>
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onDownload(f.storage_path, f.file_name)}><Download className="h-3 w-3" /></Button>
-              {canDelete && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onDeleteFile(f.id, f.storage_path)}><Trash2 className="h-3 w-3 text-destructive" /></Button>}
+              {(canDelete || isClient) && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onDeleteFile(f.id, f.storage_path)}><Trash2 className="h-3 w-3 text-destructive" /></Button>}
             </li>
           ))}
         </ul>
