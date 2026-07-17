@@ -16,7 +16,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, FolderOpen } from "lucide-react";
+import { Plus, FolderOpen, Search } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/requests")({
   head: () => ({ meta: [{ title: "Document Requests — CA Vault" }] }),
@@ -32,6 +32,9 @@ function RequestsPage() {
   const doCreateRequest = useServerFn(createRequest);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterClient, setFilterClient] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
   const [clientId, setClientId] = useState("");
@@ -52,7 +55,16 @@ function RequestsPage() {
     queryFn: () => fetchRequests(),
   });
 
-  const allRequests = requests ?? [];
+  const allRequests = (requests ?? []).filter((r) => {
+    const q = search.toLowerCase();
+    const matchesSearch = !q ||
+      r.title.toLowerCase().includes(q) ||
+      (r.clientName ?? "").toLowerCase().includes(q) ||
+      (r.fyLabel ?? "").toLowerCase().includes(q);
+    const matchesClient = !filterClient || String(r.client_id) === filterClient;
+    const matchesStatus = !filterStatus || r.status === filterStatus;
+    return matchesSearch && matchesClient && matchesStatus;
+  });
   const totalPages = Math.max(1, Math.ceil(allRequests.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const paginated = allRequests.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
@@ -152,6 +164,38 @@ function RequestsPage() {
         )}
       </div>
 
+      {/* Search + filters */}
+      {(requests ?? []).length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          <div className="relative flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by title, client, FY…"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              className="pl-9"
+            />
+          </div>
+          <Select value={filterClient} onValueChange={(v) => { setFilterClient(v === "_all" ? "" : v); setPage(1); }}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="All clients" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All clients</SelectItem>
+              {Array.from(new Map((requests ?? []).filter(r => r.clientName).map(r => [r.client_id, r.clientName])).entries())
+                .map(([id, name]) => <SelectItem key={id} value={String(id)}>{name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v === "_all" ? "" : v); setPage(1); }}>
+            <SelectTrigger className="w-36"><SelectValue placeholder="All statuses" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All statuses</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="archived">Archived</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {isLoading ? (
         <p className="text-muted-foreground">Loading…</p>
       ) : (requests ?? []).length === 0 ? (
@@ -160,6 +204,14 @@ function RequestsPage() {
             <FolderOpen className="mb-3 h-8 w-8 text-muted-foreground" />
             <p className="font-medium">No requests yet</p>
             <p className="mt-1 text-sm text-muted-foreground">Create your first document request to start collecting files from clients.</p>
+          </CardContent>
+        </Card>
+      ) : allRequests.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center py-12 text-center">
+            <Search className="mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="font-medium">No matching requests</p>
+            <p className="mt-1 text-sm text-muted-foreground">Try adjusting your search or filters.</p>
           </CardContent>
         </Card>
       ) : (
