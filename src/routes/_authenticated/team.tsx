@@ -159,15 +159,15 @@ function TeamPage() {
         <strong>How permissions work:</strong> Base role (Manager/Staff) is just a label. Actual permissions come from <span className="font-semibold text-red-600">Custom Roles</span> defined in <a href="/roles" className="font-semibold text-red-600 underline">Roles &amp; Permissions</a>. Assign custom roles to members by clicking the badges below. <span className="font-semibold text-red-600">Firm Admins always have full access.</span>
       </div>
 
-      <div className="rounded-lg border border-border bg-white">
+      <div className="rounded-lg border border-border bg-white overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-12 text-center">#</TableHead>
+              <TableHead className="w-12 text-center hidden sm:table-cell">#</TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Base Role</TableHead>
-              <TableHead>Custom Roles</TableHead>
+              <TableHead className="hidden sm:table-cell">Email</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead className="hidden md:table-cell">Custom Roles</TableHead>
               <TableHead className="w-16" />
             </TableRow>
           </TableHeader>
@@ -188,20 +188,21 @@ function TeamPage() {
                 const isAdmin = m.baseRoles.includes("ca_admin");
                 return (
                   <TableRow key={m.userId}>
-                    <TableCell className="text-center text-sm text-muted-foreground">{(safePage - 1) * PAGE_SIZE + idx + 1}</TableCell>
+                    <TableCell className="text-center text-sm text-muted-foreground hidden sm:table-cell">{(safePage - 1) * PAGE_SIZE + idx + 1}</TableCell>
                     <TableCell className="font-medium">
                       {m.profile?.full_name || "—"}
                       {m.userId === user?.userId && (
                         <span className="ml-2 text-xs text-muted-foreground">(you)</span>
                       )}
+                      <p className="text-xs text-muted-foreground sm:hidden">{m.profile?.email}</p>
                     </TableCell>
-                    <TableCell>{m.profile?.email}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{m.profile?.email}</TableCell>
                     <TableCell>
                       <Badge variant={isAdmin ? "default" : "secondary"} className="capitalize">
                         {isAdmin ? "Firm Admin" : m.baseRoles[0]}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell">
                       {isAdmin ? (
                         <span className="text-xs text-muted-foreground">All permissions</span>
                       ) : (team?.customRoles ?? []).length === 0 ? (
