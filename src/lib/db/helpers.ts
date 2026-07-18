@@ -4,7 +4,7 @@
  *
  * Only imported in server functions — never bundled into the client.
  */
-import { count, eq, inArray } from "drizzle-orm";
+import { count, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "./index";
 import {
   clients,
@@ -123,22 +123,30 @@ export async function checkPlanLimit(
 ): Promise<void> {
   const db = getDb();
 
-  // Get active subscription + plan limits
+  // Get latest active/trial subscription + plan limits
   const [sub] = await db
     .select({
       plan_name: plans.name,
       max_clients: plans.max_clients,
       max_staff: plans.max_staff,
       max_templates: plans.max_templates,
+      status: subscriptions.status,
     })
     .from(subscriptions)
     .leftJoin(plans, eq(subscriptions.plan_id, plans.id))
     .where(eq(subscriptions.tenant_id, tenantId))
-    .orderBy(subscriptions.id)
+    .orderBy(desc(subscriptions.id))
     .limit(1);
 
-  // No subscription / no plan → allow (e.g. super_admin seeding)
+  // No subscription at all → allow (e.g. super_admin seeding)
   if (!sub) return;
+
+  // Subscription exists but is expired/cancelled → block all new additions
+  if (sub.status === "expired" || sub.status === "cancelled") {
+    throw new Error(
+      "Your plan has expired. Please renew from the Billing page to continue adding records."
+    );
+  }
 
   let limit = 0;
   let currentCount = 0;
