@@ -1,10 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { logActivity } from "@/lib/activity";
 import { requireAuth } from "@/lib/auth-middleware";
 import { getDb } from "@/lib/db";
 import {
-  activity_logs,
   clients,
   document_comments,
   document_files,
@@ -216,14 +216,7 @@ export const updateItemStatus = createServerFn({ method: "POST" })
       })
       .where(eq(request_items.id, data.itemId));
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `Marked item as ${data.status}`,
-      entity_type: "request_item",
-      entity_id: String(data.itemId),
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: `Marked item as ${data.status}`, entityType: "request_item", entityId: String(data.itemId) });
 
     return { ok: true };
   });
@@ -286,14 +279,7 @@ export const insertDocumentFile = createServerFn({ method: "POST" })
       .set({ status: "uploaded", updated_at: now })
       .where(eq(request_items.id, data.requestItemId));
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `Uploaded ${data.fileName}`,
-      entity_type: "request_item",
-      entity_id: String(data.requestItemId),
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: `Uploaded ${data.fileName}`, entityType: "request_item", entityId: String(data.requestItemId) });
 
     return { id: (result as any).insertId as number };
   });
@@ -349,14 +335,7 @@ export const markRequestCompleted = createServerFn({ method: "POST" })
         )
       );
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: "Marked request completed",
-      entity_type: "request",
-      entity_id: String(data.requestId),
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: "Marked request completed", entityType: "request", entityId: String(data.requestId) });
 
     return { ok: true };
   });
@@ -382,14 +361,7 @@ export const reopenRequest = createServerFn({ method: "POST" })
         )
       );
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: "Reopened request",
-      entity_type: "request",
-      entity_id: String(data.requestId),
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: "Reopened request", entityType: "request", entityId: String(data.requestId) });
 
     return { ok: true };
   });

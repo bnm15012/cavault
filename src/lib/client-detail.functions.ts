@@ -3,8 +3,8 @@ import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth-middleware";
 import { getDb } from "@/lib/db";
+import { logActivity } from "@/lib/activity";
 import {
-  activity_logs,
   client_assignments,
   clients,
   document_requests,
@@ -151,14 +151,7 @@ export const toggleAssignment = createServerFn({ method: "POST" })
       });
     }
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `${data.assigned ? "Unassigned" : "Assigned"} team member on client ${data.clientName}`,
-      entity_type: "client",
-      entity_id: String(data.clientId),
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: `${data.assigned ? "Unassigned" : "Assigned"} team member on client ${data.clientName}`, entityType: "client", entityId: String(data.clientId) });
 
     return { ok: true };
   });
@@ -195,14 +188,7 @@ export const updateClient = createServerFn({ method: "POST" })
       })
       .where(and(eq(clients.id, data.clientId), eq(clients.tenant_id, tenantId)));
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `Updated client ${data.name}`,
-      entity_type: "client",
-      entity_id: String(data.clientId),
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: `Updated client ${data.name}`, entityType: "client", entityId: String(data.clientId) });
 
     return { ok: true };
   });
@@ -229,13 +215,7 @@ export const deleteClient = createServerFn({ method: "POST" })
         and(eq(clients.id, data.clientId), eq(clients.tenant_id, tenantId))
       );
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `Deleted client ${data.clientName}`,
-      entity_type: "client",
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: `Deleted client ${data.clientName}`, entityType: "client" });
 
     return { ok: true };
   });

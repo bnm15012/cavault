@@ -3,7 +3,8 @@ import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth-middleware";
 import { getDb } from "@/lib/db";
-import { activity_logs, clients } from "@/lib/db/schema";
+import { clients } from "@/lib/db/schema";
+import { logActivity } from "@/lib/activity";
 import { getUserTenant } from "@/lib/db/helpers";
 
 export const getClients = createServerFn({ method: "GET" })
@@ -59,14 +60,7 @@ export const addClient = createServerFn({ method: "POST" })
 
     const insertId = (result as any).insertId as number;
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `Added client ${data.name}`,
-      entity_type: "client",
-      entity_id: String(insertId),
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: `Added client ${data.name}`, entityType: "client", entityId: String(insertId) });
 
     return { id: insertId };
   });

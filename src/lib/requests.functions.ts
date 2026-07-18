@@ -1,10 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
+import { logActivity } from "@/lib/activity";
 import { requireAuth } from "@/lib/auth-middleware";
 import { getDb } from "@/lib/db";
 import {
-  activity_logs,
   clients,
   document_requests,
   document_templates,
@@ -217,14 +217,7 @@ export const createRequest = createServerFn({ method: "POST" })
       );
     }
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `Created request "${data.title}"`,
-      entity_type: "request",
-      entity_id: String(requestId),
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: `Created request "${data.title}"`, entityType: "request", entityId: String(requestId) });
 
     return { id: requestId };
   });

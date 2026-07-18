@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { requireAuth } from "@/lib/auth-middleware";
 import { getDb } from "@/lib/db";
-import { activity_logs, clients, profiles, user_roles, users } from "@/lib/db/schema";
+import { clients, profiles, user_roles, users } from "@/lib/db/schema";
+import { logActivity } from "@/lib/activity";
 import { getUserTenant, hasPermission } from "@/lib/db/helpers";
 
 const BCRYPT_ROUNDS = 10;
@@ -66,14 +67,7 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
       tenant_id: tenantId,
     });
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `Added team member ${data.fullName} (${data.role})`,
-      entity_type: "user",
-      entity_id: newUserId,
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: `Added team member ${data.fullName} (${data.role})`, entityType: "user", entityId: newUserId });
 
     return { userId: newUserId };
   });
@@ -144,14 +138,7 @@ export const createClientLogin = createServerFn({ method: "POST" })
     // Link client record to portal user
     await db.update(clients).set({ portal_user_id: newUserId }).where(eq(clients.id, data.clientId));
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `Created portal login for client ${client.name}`,
-      entity_type: "client",
-      entity_id: String(data.clientId),
-      created_at: now,
-    });
+    await logActivity({ tenantId, userId, action: `Created portal login for client ${client.name}`, entityType: "client", entityId: String(data.clientId) });
 
     return { userId: newUserId };
   });
@@ -195,14 +182,7 @@ export const removeTeamMember = createServerFn({ method: "POST" })
     await db.delete(profiles).where(eq(profiles.id, data.memberUserId));
     await db.delete(users).where(eq(users.id, parseInt(data.memberUserId)));
 
-    await db.insert(activity_logs).values({
-      tenant_id: tenantId,
-      user_id: userId,
-      action: `Removed team member ${targetProfile.full_name}`,
-      entity_type: "user",
-      entity_id: data.memberUserId,
-      created_at: new Date(),
-    });
+    await logActivity({ tenantId, userId, action: `Removed team member ${targetProfile.full_name}`, entityType: "user", entityId: data.memberUserId });
 
     return { ok: true };
   });
