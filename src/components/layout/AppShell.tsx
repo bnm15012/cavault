@@ -295,32 +295,34 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
 
       <main className="flex-1 pb-20 pt-14 lg:ml-64 lg:pb-0 lg:pt-14 bg-slate-50 min-h-screen">
-        {isExpired && (
-          <div className="bg-red-600 text-white px-4 py-2.5 flex items-center justify-center gap-3 text-sm">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span>
-              Your plan has expired
-              {sub?.current_period_end
-                ? ` on ${new Date(sub.current_period_end).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`
-                : ""}
-              . You can view existing records but cannot add new ones.
-            </span>
-            {user?.isCaAdmin && (
-              <Link
-                to="/billing"
-                className="ml-2 underline underline-offset-2 font-semibold whitespace-nowrap hover:text-red-100"
-              >
-                Renew now →
-              </Link>
-            )}
-            {!user?.isCaAdmin && (
-              <span className="ml-2 font-semibold whitespace-nowrap">
-                Contact your CA Admin to renew.
+        <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8">
+          {isExpired && (
+            <div className="mb-6 rounded-lg bg-red-600 text-white px-4 py-2.5 flex items-center gap-3 text-sm">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                Your plan has expired
+                {sub?.current_period_end
+                  ? ` on ${new Date(sub.current_period_end).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`
+                  : ""}
+                . You can view existing records but cannot add new ones.
               </span>
-            )}
-          </div>
-        )}
-        <div className="mx-auto max-w-6xl px-4 py-8 lg:px-8">{children}</div>
+              {user?.isCaAdmin && (
+                <Link
+                  to="/billing"
+                  className="ml-auto underline underline-offset-2 font-semibold whitespace-nowrap hover:text-red-100"
+                >
+                  Renew now →
+                </Link>
+              )}
+              {!user?.isCaAdmin && (
+                <span className="ml-auto font-semibold whitespace-nowrap">
+                  Contact your CA Admin to renew.
+                </span>
+              )}
+            </div>
+          )}
+          {children}
+        </div>
       </main>
     </div>
   );
