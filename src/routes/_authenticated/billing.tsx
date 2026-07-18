@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, CreditCard, Loader2, Zap, Star, Building2, CalendarDays, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { createRazorpayOrder, verifyRazorpayPayment, getPublicPlans, getCurrentSubscription } from "@/lib/billing.functions";
+import { createRazorpayOrder, verifyRazorpayPayment, getPublicPlans, getCurrentSubscription, getUsageCounts } from "@/lib/billing.functions";
 
 declare global {
   interface Window {
@@ -50,6 +50,7 @@ function BillingPage() {
   const verifyPayment = useServerFn(verifyRazorpayPayment);
   const fetchPlans = useServerFn(getPublicPlans);
   const fetchSub = useServerFn(getCurrentSubscription);
+  const fetchUsage = useServerFn(getUsageCounts);
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
   const [payingPlanId, setPayingPlanId] = useState<number | null>(null);
 
@@ -62,6 +63,12 @@ function BillingPage() {
     queryKey: ["subscription", user?.tenantId],
     enabled: !!user,
     queryFn: () => fetchSub(),
+  });
+
+  const { data: usage } = useQuery({
+    queryKey: ["usage", user?.tenantId],
+    enabled: !!user,
+    queryFn: () => fetchUsage(),
   });
 
   const trialDaysLeft = sub?.current_period_end
@@ -225,11 +232,24 @@ function BillingPage() {
         {(plans ?? []).map((p, i) => {
           const Icon = PLAN_ICONS[i] ?? Zap;
           const highlighted = PLAN_HIGHLIGHT[i] ?? false;
+
+          // Check if current usage exceeds this plan's limits
+          const reasons: string[] = [];
+          if (usage) {
+            if (p.max_clients > 0 && usage.clients > p.max_clients)
+              reasons.push(`you have ${usage.clients} clients (limit: ${p.max_clients})`);
+            if (p.max_staff > 0 && usage.staff > p.max_staff)
+              reasons.push(`you have ${usage.staff} team members (limit: ${p.max_staff})`);
+            if (p.max_templates > 0 && usage.templates > p.max_templates)
+              reasons.push(`you have ${usage.templates} templates (limit: ${p.max_templates})`);
+          }
+          const incompatible = reasons.length > 0;
+
           return (
             <div
               key={p.id}
               className={`relative flex flex-col rounded-xl border bg-white p-6 shadow-sm transition-shadow hover:shadow-md ${
-                highlighted ? "border-slate-700 ring-1 ring-slate-700" : "border-border"
+                incompatible ? "opacity-60 border-border" : highlighted ? "border-slate-700 ring-1 ring-slate-700" : "border-border"
               }`}
             >
               {highlighted && (
@@ -299,15 +319,26 @@ function BillingPage() {
                 )}
               </ul>
 
-              <Button
-                className={`w-full ${highlighted ? "" : "variant-outline"}`}
-                variant={highlighted ? "default" : "outline"}
-                disabled={payingPlanId !== null}
-                onClick={() => choosePlan(p)}
-              >
-                {payingPlanId === p.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Get started with {p.name}
-              </Button>
+              {incompatible ? (
+                <div className="mt-auto">
+                  <Button className="w-full" variant="outline" disabled>
+                    Not available
+                  </Button>
+                  <p className="mt-2 text-xs text-red-600 text-center">
+                    Cannot select — {reasons.join(", ")}.
+                  </p>
+                </div>
+              ) : (
+                <Button
+                  className={`w-full mt-auto ${highlighted ? "" : "variant-outline"}`}
+                  variant={highlighted ? "default" : "outline"}
+                  disabled={payingPlanId !== null}
+                  onClick={() => choosePlan(p)}
+                >
+                  {payingPlanId === p.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Get started with {p.name}
+                </Button>
+              )}
             </div>
           );
         })}

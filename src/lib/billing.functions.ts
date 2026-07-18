@@ -1,10 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createHmac } from "crypto";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { count, eq, and, desc, asc } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth-middleware";
 import { getDb } from "@/lib/db";
-import { payments, plans, profiles, subscriptions } from "@/lib/db/schema";
-import { hasRole } from "@/lib/db/helpers";
+import { clients, document_templates, payments, plans, profiles, subscriptions, user_roles } from "@/lib/db/schema";
+import { getUserTenant, hasRole } from "@/lib/db/helpers";
 
 /** Returns the current subscription (with plan name) for the logged-in user's tenant. */
 export const getCurrentSubscription = createServerFn({ method: "GET" })
@@ -220,4 +220,25 @@ export const verifyRazorpayPayment = createServerFn({ method: "POST" })
       .where(eq(payments.id, payment.id));
 
     return { success: true as const, planName: plan.name };
+  });
+
+/** Returns current usage counts for clients, staff, templates */
+export const getUsageCounts = createServerFn({ method: "GET" })
+  .middleware([requireAuth])
+  .handler(async ({ context }) => {
+    const tenantId = await getUserTenant(context.userId);
+    if (!tenantId) return { clients: 0, staff: 0, templates: 0 };
+
+    const db = getDb();
+    const [clientRow, templateRow, allRoles] = await Promise.all([
+      db.select({ c: count() }).from(clients).where(eq(clients.tenant_id, tenantId)),
+      db.select({ c: count() }).from(document_templates).where(eq(document_templates.tenant_id, tenantId)),
+      db.select({ role: user_roles.role }).from(user_roles).where(eq(user_roles.tenant_id, tenantId)),
+    ]);
+
+    return {
+      clients: clientRow[0]?.c ?? 0,
+      staff: allRoles.filter((r) => r.role === "manager" || r.role === "staff").length,
+      templates: templateRow[0]?.c ?? 0,
+    };
   });
