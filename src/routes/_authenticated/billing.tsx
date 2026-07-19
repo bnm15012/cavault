@@ -75,8 +75,6 @@ function BillingPage() {
     queryKey: ["usage", user?.tenantId],
     enabled: !!user,
     queryFn: () => fetchUsage(),
-    staleTime: DAY,
-    gcTime: DAY,
   });
 
   const trialDaysLeft = sub?.current_period_end
