@@ -18,6 +18,8 @@ function ActivityPage() {
   const { data: logs, isLoading } = useQuery({
     queryKey: ["activity"],
     queryFn: () => fetchLogs(),
+    staleTime: 60 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
   });
 
   return (
